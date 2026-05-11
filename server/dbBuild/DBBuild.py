@@ -100,73 +100,43 @@ def importFetters():
     conn.commit()
 
 
-def importQuest(fileName: str):
+def importQuestsFromExcel():
     cursor = conn.cursor()
-    obj = json.load(open(DATA_PATH + "\\BinOutput\\Quest\\" + fileName, encoding='utf-8'))
+    quests = json.load(open(DATA_PATH + "\\ExcelBinOutput\\MainQuestExcelConfigData.json", encoding='utf-8'))
+    sql1 = 'insert or ignore into quest(questId, titleTextMapHash, chapterId) VALUES (?,?,?)'
 
-    sql1 = 'insert into quest(questId, titleTextMapHash, chapterId) VALUES (?,?,?)'
-    sql2 = 'insert into questTalk(questId, talkId) values (?,?)'
-
-    if 'id' in obj:
-        if 'EKEKACCODOE' in obj:
-            keyQuestId = 'id'
-            keyTitleTextMapHash = 'descTextMapHash'  # That's right, it seems that dim messed up the key of title in 5.0
-            keyChapterId = 'chapterId'
-            keyTalks = 'talks'
-            keyTalkId = 'id'
-        else:
-            keyQuestId = 'id'
-            keyTitleTextMapHash = 'titleTextMapHash'
-            keyChapterId = 'chapterId'
-            keyTalks = 'talks'
-            keyTalkId = 'id'
-    else:
-        keyQuestId = 'CCFPGAKINNB'
-        keyTitleTextMapHash = 'HLAINHJACPJ'
-        keyChapterId = 'FLCLAPBOOHF'
-        keyTalks = 'PCNNNPLAEAI'
-        keyTalkId = 'CCFPGAKINNB'
-
-    questId = obj[keyQuestId]
-
-    if keyTitleTextMapHash in obj:
-        titleTextMapHash = obj[keyTitleTextMapHash]
-    else:
-        titleTextMapHash = None
-        print("questId {} don't have TitleTextMapHash!".format(questId))
-
-    if keyChapterId in obj:
-        chapterId = obj[keyChapterId]
-    else:
-        chapterId = None
-
-    cursor.execute(sql1, (questId, titleTextMapHash, chapterId))
-
-    if keyTalks not in obj:
-        print("questId {} don't have talk!".format(questId))
-    else:
-
-        for talk in obj[keyTalks]:
-            talkId = talk[keyTalkId]
-            cursor.execute(sql2, (questId, talkId))
-            pass
+    for quest in tqdm(quests, total=len(quests)):
+        questId = quest['id']
+        titleTextMapHash = quest.get('titleTextMapHash', None)
+        chapterId = quest.get('chapterId', None)
+        if chapterId == 0:
+            chapterId = None
+        cursor.execute(sql1, (questId, titleTextMapHash, chapterId))
 
     cursor.close()
+    conn.commit()
 
 
-def importAllQuests():
-    files = os.listdir(DATA_PATH + "\\BinOutput\\Quest\\")
-    n = len(files)
-    for val, fileName in tqdm(enumerate(files), total=len(files)):
-        # print("Now: {} {}/{}".format(fileName, val, n))
-        importQuest(fileName)
+def importQuestTalkFromExcel():
+    cursor = conn.cursor()
+    sql1 = 'insert or ignore into questTalk(questId, talkId) values (?,?)'
+
+    for fileName in ['TalkExcelConfigData_0.json', 'TalkExcelConfigData_1.json']:
+        talks = json.load(open(DATA_PATH + "\\ExcelBinOutput\\" + fileName, encoding='utf-8'))
+        for talk in tqdm(talks, total=len(talks), desc=fileName):
+            talkId = talk.get('id')
+            questId = talk.get('questId', 0)
+            if talkId is not None and questId != 0:
+                cursor.execute(sql1, (questId, talkId))
+
+    cursor.close()
     conn.commit()
 
 
 def importChapters():
     cursor = conn.cursor()
     chapters = json.load(open(DATA_PATH + "\\ExcelBinOutput\\ChapterExcelConfigData.json", encoding='utf-8'))
-    sql1 = "insert into chapter(chapterId, chapterTitleTextMapHash, chapterNumTextMapHash) values (?,?,?)"
+    sql1 = "insert or ignore into chapter(chapterId, chapterTitleTextMapHash, chapterNumTextMapHash) values (?,?,?)"
 
     for chapter in chapters:
         cursor.execute(sql1,(chapter['id'], chapter['chapterTitleTextMapHash'], chapter['chapterNumTextMapHash']))
@@ -210,13 +180,18 @@ def main():
     importManualTextMap()
     print("Importing fetters...")
     importFetters()
-    print("Importing quests...")
-    importAllQuests()
+    print("Importing quests from Excel...")
+    importQuestsFromExcel()
+    print("Importing quest-talk mapping from Excel...")
+    importQuestTalkFromExcel()
     print("Importing chapters...")
     importChapters()
     print("Importing voices...")
-    voiceItemImport.loadAvatars()
-    voiceItemImport.importAllVoiceItems()
+    try:
+        voiceItemImport.loadAvatars()
+        voiceItemImport.importAllVoiceItems()
+    except Exception as e:
+        print(f"Voice import failed (non-critical): {e}")
     print("Done!")
 
 

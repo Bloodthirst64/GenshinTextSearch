@@ -3,3 +3,6 @@
 vgm
 .idea
 .DS_Store
+__pycache__/
+server/dbBuild/data/
+server/dbBuild/langs/*
