@@ -19,10 +19,10 @@ def replace(textMap: str, playerIsMale: bool, lang: int):
 
     text2 = re.sub(r'\{(.*?)AVATAR#SEXPRO\[(.*?)\|(.*?)]}', replaceSexPro, text1)
 
-    wanderName = databaseHelper.getWanderName(lang)
+    wanderName = databaseHelper.getWanderName(lang) or "流浪者"
     text3 = re.sub(r"\{REALNAME\[ID\(1\)\|HOSTONLY\(true\)]}", wanderName, text2)
 
-    travellerName = databaseHelper.getTravellerName(lang)
+    travellerName = databaseHelper.getTravellerName(lang) or "旅行者"
     text4 = re.sub(r"\{NICKNAME}", travellerName, text3)
 
     # 最后去掉前面的#号
