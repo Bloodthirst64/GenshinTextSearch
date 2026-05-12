@@ -3,8 +3,6 @@ import os
 from AudioReader.FilePackager import Package, fnv_hash_64
 import config
 
-GENSHIN_PATH = config.getAssetDir()
-
 langCodes = {
     1: "Chinese",
     4: "English(US)",
@@ -16,9 +14,12 @@ langPackages: 'dict[int, Package]' = {}
 
 
 def loadLangPackages():
+    genshin_path = config.getAssetDir("genshin")
+    if not genshin_path:
+        return
     paths = [
-        os.path.join(GENSHIN_PATH, "Persistent", "AudioAssets"),
-        os.path.join(GENSHIN_PATH, "StreamingAssets", "AudioAssets")
+        os.path.join(genshin_path, "Persistent", "AudioAssets"),
+        os.path.join(genshin_path, "StreamingAssets", "AudioAssets")
     ]
 
     langToCode = {
@@ -43,6 +44,8 @@ def loadLangPackages():
 
             voicePack = Package()
             for fileName in files:
+                if not fileName.endswith('.pck'):
+                    continue
                 fobj = open(os.path.join(langPackPath, fileName), "rb")
                 voicePack.addfile(fobj)
             langPackages[code] = voicePack

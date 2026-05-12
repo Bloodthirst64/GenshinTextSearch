@@ -26,7 +26,8 @@ const onVoicePlay = (voiceUrl) => {
 
 const gotoTalk = () => {
     if(!props.translateObj.isTalk) return
-    router.push(`/talk?textHash=${props.translateObj.hash}&keyword=${props.keyword}`)
+    let game = props.translateObj.game || (global.currentGame.length > 0 ? global.currentGame[0] : 'genshin')
+    router.push(`/talk?textHash=${props.translateObj.hash}&keyword=${props.keyword}&game=${game}`)
 }
 
 </script>
@@ -40,6 +41,7 @@ const gotoTalk = () => {
                 <span v-if="global.voiceLanguages[translateKey]">
                     <PlayVoiceButton v-for="voice in props.translateObj.voicePaths"
                                      :voice-path="voice" :lang-code="translateKey"
+                                     :game="props.translateObj.game"
                                      @on-voice-play="onVoicePlay"
                     />
                 </span>
@@ -49,6 +51,7 @@ const gotoTalk = () => {
         </div>
         <p class="info">
             <span class="origin" :class="{talkOrigin: props.translateObj.isTalk}" @click="gotoTalk">
+                <el-tag v-if="props.translateObj.game" :type="props.translateObj.game === 'starrail' ? 'warning' : ''" size="small" class="gameTag">{{props.translateObj.gameName}}</el-tag>
                 来源：{{props.translateObj.origin}}
                 <span class="gotoIcon" v-if="props.translateObj.isTalk">&gt</span>
             </span>
@@ -77,6 +80,11 @@ const gotoTalk = () => {
 
 .origin{
     color: #ab9d96;
+}
+
+.gameTag{
+    margin-right: 6px;
+    vertical-align: middle;
 }
 
 .talkOrigin {

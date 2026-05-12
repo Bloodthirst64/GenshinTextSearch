@@ -2,7 +2,7 @@
 
 import { changeTheme } from "@/assets/changeTheme";
 import router from "@/router";
-import { onBeforeMount, onMounted, reactive, ref, watch } from "vue";
+import { computed, onBeforeMount, onMounted, reactive, ref, watch } from "vue";
 import UserInfoCard from "@/components/UserInfoCard.vue";
 import globalData from "@/global/global"
 import { ElMenuItem, ElSubMenu } from "element-plus";
@@ -68,6 +68,36 @@ const menu = ref();
 let contentDom = undefined;
 const loaded = ref(false)
 
+const headerTitle = computed(() => {
+    if (global.availableGames && global.currentGame.length > 0) {
+        let names = global.currentGame.map(g => global.availableGames[g]).filter(Boolean)
+        if (names.length > 0) {
+            return names.join(" / ") + " Text Search"
+        }
+    }
+    return "Game Text Search"
+})
+
+let lastGames = []
+
+const onGameChange = async (games) => {
+    if (games.length === 0) {
+        global.currentGame = [...lastGames]
+        return
+    }
+    lastGames = [...games]
+    let mergedLangs = {}
+    let mergedVoiceLangs = {}
+    for (let game of games) {
+        let langs = (await api.getImportedTextLanguages(game)).json
+        Object.assign(mergedLangs, langs)
+        let voiceLangs = (await api.getImportedVoiceLanguages(game)).json
+        Object.assign(mergedVoiceLangs, voiceLangs)
+    }
+    global.languages = mergedLangs
+    global.voiceLanguages = mergedVoiceLangs
+}
+
 onMounted(async () => {
     (() => {
         let menuItemNow = getSidebarPath();
@@ -82,8 +112,24 @@ onMounted(async () => {
         contentDom = document.querySelector(".content")
     })()
 
-    global.languages = (await api.getImportedTextLanguages()).json
-    global.voiceLanguages = (await api.getImportedVoiceLanguages()).json
+    let gamesRes = (await api.getAvailableGames()).json
+    global.availableGames = gamesRes
+    let firstGame = Object.keys(gamesRes)[0]
+    if (firstGame) {
+        global.currentGame = [firstGame]
+        lastGames = [firstGame]
+    }
+
+    let mergedLangs = {}
+    let mergedVoiceLangs = {}
+    for (let game of global.currentGame) {
+        let langs = (await api.getImportedTextLanguages(game)).json
+        Object.assign(mergedLangs, langs)
+        let voiceLangs = (await api.getImportedVoiceLanguages(game)).json
+        Object.assign(mergedVoiceLangs, voiceLangs)
+    }
+    global.languages = mergedLangs
+    global.voiceLanguages = mergedVoiceLangs
     global.config = (await api.getConfig()).json
 
     loaded.value = true
@@ -100,10 +146,15 @@ watch(router.currentRoute, () => {
     <div class="pageWrapper">
         <div class="headerHolder">
             <div class="leftTitle">
-                <!--                <img alt="" src="../assets/logo.png">-->
-                Genshin Text Search
+                {{ headerTitle }}
             </div>
-
+            <div class="gameSelector">
+                <el-checkbox-group v-model="global.currentGame" @change="onGameChange" size="small">
+                    <el-checkbox-button v-for="(name, key) in global.availableGames" :key="key" :label="key">
+                        {{ name }}
+                    </el-checkbox-button>
+                </el-checkbox-group>
+            </div>
         </div>
         <div class="contentHolder">
             <div class="sideBar">
@@ -226,5 +277,26 @@ watch(router.currentRoute, () => {
 
 .leftTitle {
     color: #fff;
+}
+
+.gameSelector {
+    color: #fff;
+}
+
+.gameSelector :deep(.el-checkbox-button__inner) {
+    background-color: transparent;
+    border-color: rgba(255, 255, 255, 0.4);
+    color: #fff;
+}
+
+.gameSelector :deep(.el-checkbox-button.is-checked .el-checkbox-button__inner) {
+    background-color: #fff;
+    border-color: #fff;
+    color: var(--el-color-primary);
+    box-shadow: -1px 0 0 0 #fff;
+}
+
+.gameSelector :deep(.el-checkbox-button__inner:hover) {
+    color: var(--el-color-primary-light-3);
 }
 </style>

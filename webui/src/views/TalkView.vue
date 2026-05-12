@@ -29,12 +29,16 @@ const reloadPage = () => {
 
 
 const reloadTalk = () => {
-    api.getTalkFromHash(textHash.value).then(res => {
+    let game = route.query.game || (global.currentGame.length > 0 ? global.currentGame[0] : 'genshin')
+    api.getTalkFromHash(textHash.value, game).then(res => {
         let resJson = res.json
         queryTime.value = resJson.time.toFixed(2)
         let talkContents = resJson.contents
         questName.value = talkContents.talkQuestName
         dialogues.value = talkContents.dialogues
+        for (let d of dialogues.value) {
+            d.game = game
+        }
 
     }).catch(err => {
         if(!err.network) err.defaultHandler()
@@ -206,6 +210,7 @@ onDeactivated(() => {
                         <span v-if="global.voiceLanguages[langCode]">
                             <PlayVoiceButton v-for="voice in scope.row.voicePaths"
                                              :voice-path="voice" :lang-code="langCode"
+                                             :game="scope.row.game"
                                              @on-voice-play="(url) =>{ onVoicePlay(url, scope.row.dialogueId)}"
                                              :ref = "(el) => {registerVoicePlayButton(el, langCode, scope.row.dialogueId)}"
                             />

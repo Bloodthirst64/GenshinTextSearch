@@ -1,9 +1,11 @@
-let languages = {}
-let voiceLanguages = {}
-let config = {}
+import {reactive} from 'vue'
 
-export default {
-    languages,
-    voiceLanguages,
-    config
-};
+const global = reactive({
+    languages: {},
+    voiceLanguages: {},
+    config: {},
+    availableGames: {},
+    currentGame: ["genshin"]
+})
+
+export default global

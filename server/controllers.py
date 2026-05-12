@@ -2,103 +2,125 @@ import io
 
 import databaseHelper
 import languagePackReader
+import starrailLanguagePackReader
 import config
 import placeholderHandler
 
 
-def selectVoicePathFromTextHash(textHash: int):
-    voicePath: str = databaseHelper.selectVoicePathFromTextHashInDialogue(textHash)
+def selectVoicePathFromTextHash(textHash, game="genshin", db=None):
+    if db is None:
+        db = databaseHelper.get_db(game)
+    voicePath = db.selectVoicePathFromTextHashInDialogue(textHash)
     if voicePath is not None:
         return voicePath
 
-    voicePath = databaseHelper.selectVoicePathFromTextHashInFetter(textHash)
+    voicePath = db.selectVoicePathFromTextHashInFetter(textHash)
     if voicePath is not None:
         return voicePath
 
     return None
 
 
-def selectVoiceOriginFromTextHash(textHash: int, langCode: int) -> tuple[str, bool]:
-    origin = databaseHelper.getSourceFromDialogue(textHash, langCode)
+def selectVoiceOriginFromTextHash(textHash, langCode: int, game="genshin", db=None) -> tuple[str, bool]:
+    if db is None:
+        db = databaseHelper.get_db(game)
+    origin = db.getSourceFromDialogue(textHash, langCode)
     if origin is not None:
         return origin, True
 
-    origin = databaseHelper.getSourceFromFetter(textHash, langCode)
+    origin = db.getSourceFromFetter(textHash, langCode)
     if origin is not None:
         return origin, False
 
-    # TODO 支持更多类型的语音
     return "其他文本", False
 
 
-def queryTextHashInfo(textHash: int, langs: 'list[int]', sourceLangCode: int, queryOrigin=True):
+def queryTextHashInfo(textHash, langs: 'list[int]', sourceLangCode: int, queryOrigin=True, game="genshin", db=None):
+    if db is None:
+        db = databaseHelper.get_db(game)
     obj = {'translates': {}, 'voicePaths': [], 'hash': textHash}
-    translates = databaseHelper.selectTextMapFromTextHash(textHash, langs)
+    translates = db.selectTextMapFromTextHash(textHash, langs)
     for translate in translates:
-        # #开头的要进行占位符替换
-        if translate[0].startswith("#"):
-            obj['translates'][translate[1]] = (placeholderHandler.replace(translate[0], config.getIsMale(), translate[1]))[1:]
+        content = translate[0]
+        if content.startswith("#"):
+            obj['translates'][translate[1]] = (placeholderHandler.replace(content, config.getIsMale(game), translate[1], game))[1:]
+        elif game == "starrail" and ("{M#" in content or "{F#" in content or "{NICKNAME}" in content):
+            obj['translates'][translate[1]] = placeholderHandler.replace(content, config.getIsMale(game), translate[1], game)
         else:
-            obj['translates'][translate[1]] = translate[0]
+            obj['translates'][translate[1]] = content
 
     if queryOrigin:
-        origin, isTalk = selectVoiceOriginFromTextHash(textHash, sourceLangCode)
+        origin, isTalk = selectVoiceOriginFromTextHash(textHash, sourceLangCode, game, db)
         obj['isTalk'] = isTalk
         obj['origin'] = origin
 
-    voicePath = selectVoicePathFromTextHash(textHash)
-    if voicePath is not None:
-        voiceExist = False
-        for lang in langs:
-            if lang in languagePackReader.langPackages and languagePackReader.checkAudioBin(voicePath, lang):
-                voiceExist = True
-                break
+    if game == "genshin":
+        voicePath = selectVoicePathFromTextHash(textHash, game, db)
+        if voicePath is not None:
+            voiceExist = False
+            for lang in langs:
+                if lang in languagePackReader.langPackages and languagePackReader.checkAudioBin(voicePath, lang):
+                    voiceExist = True
+                    break
 
-        if voiceExist:
-            obj['voicePaths'].append(voicePath)
+            if voiceExist:
+                obj['voicePaths'].append(voicePath)
+    elif game == "starrail":
+        voicePath = selectVoicePathFromTextHash(textHash, game, db)
+        if voicePath is not None:
+            starrailLanguagePackReader.loadLangPackages()
+            if starrailLanguagePackReader.langPackages:
+                voiceExist = False
+                for lang in langs:
+                    if lang in starrailLanguagePackReader.langPackages and starrailLanguagePackReader.checkAudioBin(voicePath, lang):
+                        voiceExist = True
+                        break
+                if voiceExist:
+                    obj['voicePaths'].append(voicePath)
+            else:
+                obj['voicePaths'].append(voicePath)
 
     return obj
 
 
-def getTranslateObj(keyword: str, langCode: int):
-    # 找出目标语言的textMap包含keyword的文本
+def getTranslateObj(keyword: str, langCode: int, game="genshin"):
     ans = []
 
-    contents = databaseHelper.selectTextMapFromKeyword(keyword, langCode)
+    db = databaseHelper.get_db(game)
+    contents = db.selectTextMapFromKeyword(keyword, langCode)
 
-    langs = config.getResultLanguages()
-    sourceLangCode = config.getSourceLanguage()
+    langs = config.getResultLanguages(game)
+    sourceLangCode = config.getSourceLanguage(game)
 
     for content in contents:
-        obj = queryTextHashInfo(content[0], langs, sourceLangCode)
+        obj = queryTextHashInfo(content[0], langs, sourceLangCode, game=game, db=db)
         ans.append(obj)
 
     return ans
 
 
-# 根据hash值查询整个对话的内容
-def getTalkFromHash(textHash: int):
-    # 先查到文本所属的talk，然后查询对话所属的任务的标题，然后查询对话所有的内容，对于每一句话，查询多语言翻译、说话者
-    talkInfo = databaseHelper.getTalkInfo(textHash)
+def getTalkFromHash(textHash, game="genshin"):
+    db = databaseHelper.get_db(game)
+    talkInfo = db.getTalkInfo(textHash)
     if talkInfo is None:
         raise "内容不属于任何对话！"
 
-    langs = config.getResultLanguages()
-    sourceLangCode = config.getSourceLanguage()
+    langs = config.getResultLanguages(game)
+    sourceLangCode = config.getSourceLanguage(game)
 
     talkId, talkerType, talkerId, coopQuestId = talkInfo
     if coopQuestId is None:
-        questCompleteName = databaseHelper.getTalkQuestName(talkId, sourceLangCode)
+        questCompleteName = db.getTalkQuestName(talkId, sourceLangCode)
     else:
-        questCompleteName = databaseHelper.getCoopTalkQuestName(coopQuestId, sourceLangCode)
+        questCompleteName = db.getCoopTalkQuestName(coopQuestId, sourceLangCode)
 
-    rawDialogues = databaseHelper.getTalkContent(talkId, coopQuestId)
+    rawDialogues = db.getTalkContent(talkId, coopQuestId)
     dialogues = []
 
     for rawDialogue in rawDialogues:
         textHash, talkerType, talkerId, dialogueId = rawDialogue
-        obj = queryTextHashInfo(textHash, langs, sourceLangCode, False)
-        obj['talker'] = databaseHelper.getTalkerName(talkerType, talkerId, sourceLangCode)
+        obj = queryTextHashInfo(textHash, langs, sourceLangCode, False, game, db)
+        obj['talker'] = db.getTalkerName(talkerType, talkerId, sourceLangCode)
         obj['dialogueId'] = dialogueId
         dialogues.append(obj)
 
@@ -111,23 +133,33 @@ def getTalkFromHash(textHash: int):
     return ans
 
 
-def getVoiceBinStream(voicePath, langCode):
-    wemBin = languagePackReader.getAudioBin(voicePath, langCode)
+def getVoiceBinStream(voicePath, langCode, game="genshin"):
+    if game == "starrail":
+        starrailLanguagePackReader.loadLangPackages()
+        wemBin = starrailLanguagePackReader.getAudioBin(voicePath, langCode)
+    else:
+        wemBin = languagePackReader.getAudioBin(voicePath, langCode)
     if wemBin is None:
         return None
     return io.BytesIO(wemBin)
 
 
-def getLoadedVoicePacks():
+def getLoadedVoicePacks(game="genshin"):
     ans = {}
-    for packId in languagePackReader.langPackages:
-        ans[packId] = languagePackReader.langCodes[packId]
+    if game == "starrail":
+        starrailLanguagePackReader.loadLangPackages()
+        for packId in starrailLanguagePackReader.langPackages:
+            ans[packId] = starrailLanguagePackReader.langCodes[packId]
+    else:
+        for packId in languagePackReader.langPackages:
+            ans[packId] = languagePackReader.langCodes[packId]
 
     return ans
 
 
-def getImportedTextMapLangs():
-    langs = databaseHelper.getImportedTextMapLangs()
+def getImportedTextMapLangs(game="genshin"):
+    db = databaseHelper.get_db(game)
+    langs = db.getImportedTextMapLangs()
     ans = {}
     for langItem in langs:
         ans[langItem[0]] = langItem[1]
@@ -139,21 +171,29 @@ def getConfig():
     return config.config
 
 
-def setDefaultSearchLanguage(newLanguage: int):
-    config.setDefaultSearchLanguage(newLanguage)
+def setDefaultSearchLanguage(newLanguage: int, game: str = "genshin"):
+    config.setDefaultSearchLanguage(newLanguage, game)
 
 
-def setResultLanguages(newLanguages: list[int]):
-    config.setResultLanguages(newLanguages)
+def setResultLanguages(newLanguages: list[int], game: str = "genshin"):
+    config.setResultLanguages(newLanguages, game)
 
 
 def saveConfig():
     config.saveConfig()
 
 
-def setSourceLanguage(newSourceLanguage):
-    config.setSourceLanguage(newSourceLanguage)
+def setSourceLanguage(newSourceLanguage, game: str = "genshin"):
+    config.setSourceLanguage(newSourceLanguage, game)
 
 
-def setIsMale(isMale: bool):
-    config.setIsMale(isMale)
+def setIsMale(isMale: bool, game: str = "genshin"):
+    config.setIsMale(isMale, game)
+
+
+def setAssetDir(newDir: str, game: str = "genshin"):
+    config.setAssetDir(newDir, game)
+
+
+def setNickname(nickname: str, game: str = "genshin"):
+    config.setNickname(nickname, game)

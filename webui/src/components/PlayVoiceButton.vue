@@ -4,7 +4,7 @@ import api from "@/api/keywordQuery";
 import * as converter from "@/assets/wem2wav";
 import {ref, watch} from "vue";
 
-const props = defineProps(['voicePath', 'langCode'])
+const props = defineProps(['voicePath', 'langCode', 'game'])
 const emit = defineEmits(['onVoicePlay'])
 
 let audioUrl = undefined
@@ -13,7 +13,7 @@ const icon = ref()
 
 const getAudioUrl = async () => {
     if(!audioUrl){
-        let buffer = await api.getVoiceOver(props.voicePath, props.langCode)
+        let buffer = await api.getVoiceOver(props.voicePath, props.langCode, props.game)
         audioUrl= await converter.convertBufferedArray(buffer)
 
     }

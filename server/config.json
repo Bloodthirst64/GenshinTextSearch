@@ -1,7 +1,24 @@
 {
-  "resultLanguages": [1, 4],
-  "defaultSearchLanguage": 4,
-  "assetDir": "E:\\mihoyo\\Genshin Impact\\Genshin Impact Game\\YuanShen_Data",
-  "sourceLanguage": 1,
-  "isMale": true
+  "genshin": {
+    "assetDir": "E:\\mihoyo\\Genshin Impact\\Genshin Impact Game\\YuanShen_Data",
+    "isMale": true,
+    "nickname": "嗜血",
+    "sourceLanguage": 1,
+    "defaultSearchLanguage": 4,
+    "resultLanguages": [
+      1,
+      4
+    ]
+  },
+  "starrail": {
+    "assetDir": "E:\\mihoyo\\Star Rail\\Game\\StarRail_Data",
+    "isMale": false,
+    "nickname": "嗜血",
+    "sourceLanguage": 1,
+    "defaultSearchLanguage": 4,
+    "resultLanguages": [
+      1,
+      4
+    ]
+  }
 }

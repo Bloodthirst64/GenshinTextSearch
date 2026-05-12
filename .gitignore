@@ -5,4 +5,5 @@ vgm
 .DS_Store
 __pycache__/
 server/dbBuild/data/
+server/dbBuild/starrail-data/
 server/dbBuild/langs/*

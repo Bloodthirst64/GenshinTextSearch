@@ -1,39 +1,21 @@
 import request from "@/utils/request";
 
-/**
- * 获得数据库中导入的TextMap语言列表
- */
-const getImportedTextLanguages = () => {
-    // return {
-    //     1: "Chinese",
-    //     4: "English(US)",
-    //     9: "Japaneses"
-    // }
+const getAvailableGames = () => {
+    return request.get("/api/getAvailableGames");
+}
 
-    return request.get("/api/getImportedTextLanguages");
+const getImportedTextLanguages = (game) => {
+    return request.get("/api/getImportedTextLanguages", { params: { game: game || "genshin" } });
 };
 
 
-/**
- * 获得游戏安装的语音列表
- */
-const getImportedVoiceLanguages = () => {
-    return request.get("/api/getImportedVoiceLanguages");
+const getImportedVoiceLanguages = (game) => {
+    return request.get("/api/getImportedVoiceLanguages", { params: { game: game || "genshin" } });
 }
 
-const saveConfig = (resultLanguages, defaultSearchLanguage, sourceLanguage, isMale) => {
-    let tmp = []
-    for(let code of resultLanguages){
-        tmp.push(parseInt(code))
-    }
-
+const saveConfig = (perGameConfig) => {
     return request.post("/api/saveSettings", {
-        'config' :{
-            "resultLanguages": tmp,
-            "defaultSearchLanguage": parseInt(defaultSearchLanguage),
-            "sourceLanguage": parseInt(sourceLanguage),
-            "isMale": isMale
-        }
+        'config': perGameConfig
     })
 }
 
@@ -42,6 +24,7 @@ const getConfig = () => {
 }
 
 export default {
+    getAvailableGames,
     getImportedTextLanguages,
     getImportedVoiceLanguages,
     getConfig,

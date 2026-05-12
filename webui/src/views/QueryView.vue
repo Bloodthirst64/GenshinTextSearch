@@ -61,7 +61,7 @@
 </template>
 
 <script setup>
-import {onBeforeMount, ref} from 'vue';
+import {onBeforeMount, ref, watch} from 'vue';
 import {Close, Delete, Download, Plus, ZoomIn} from '@element-plus/icons-vue';
 import { Search } from '@element-plus/icons-vue'
 import global from "@/global/global"
@@ -74,7 +74,12 @@ const queryLanguages = [1,4]
 const queryResult = ref([])
 
 
-const selectedInputLanguage = ref(global.config.defaultSearchLanguage + '')
+const getSearchLanguage = () => {
+    let firstGame = global.currentGame[0] || "genshin"
+    return (global.config[firstGame]?.defaultSearchLanguage ?? 4) + ''
+}
+
+const selectedInputLanguage = ref('4')
 const keyword = ref("")
 const keywordLast = ref("")
 const supportedInputLanguage = ref({})
@@ -82,7 +87,19 @@ const searchSummary = ref("")
 
 onBeforeMount(async ()=>{
     supportedInputLanguage.value = global.languages
+    selectedInputLanguage.value = getSearchLanguage()
 })
+
+watch(() => global.currentGame, async (newGames) => {
+    selectedInputLanguage.value = getSearchLanguage()
+    queryResult.value = []
+    searchSummary.value = ""
+}, {deep: true})
+
+watch(() => global.languages, async (newLangs) => {
+    supportedInputLanguage.value = newLangs
+    selectedInputLanguage.value = getSearchLanguage()
+}, {deep: true})
 
 /**
  *
@@ -93,16 +110,39 @@ const showPlayer = ref(false)
 let firstShowPlayer = true
 
 const onQueryButtonClicked = async () =>{
-    let ans = (await api.queryByKeyword(keyword.value, selectedInputLanguage.value)).json
-    // 停止语音播放
-    voicePlayer.value.pause()
+    if (global.currentGame.length === 0) {
+        searchSummary.value = "请至少选择一个游戏。"
+        queryResult.value = []
+        return
+    }
 
-    let searchSummaryTmp = `查询用时: ${ans.time.toFixed(2)}ms，`
-    if(ans.contents.length > 0){
-        if(ans.contents.length >= 200){
+    try {
+        voicePlayer.value.pause()
+    } catch(e) {}
+
+    let allContents = []
+    let totalTime = 0
+    let gameNames = {
+        "genshin": "原神",
+        "starrail": "崩坏：星穹铁道"
+    }
+
+    for (let game of global.currentGame) {
+        let ans = (await api.queryByKeyword(keyword.value, selectedInputLanguage.value, game)).json
+        totalTime += ans.time
+        for (let item of ans.contents) {
+            item.game = game
+            item.gameName = gameNames[game] || game
+            allContents.push(item)
+        }
+    }
+
+    let searchSummaryTmp = `查询用时: ${totalTime.toFixed(2)}ms，`
+    if(allContents.length > 0){
+        if(allContents.length >= 200){
             searchSummaryTmp += `共 ≥200 条结果`
         }else{
-            searchSummaryTmp += `共 ${ans.contents.length} 条结果`
+            searchSummaryTmp += `共 ${allContents.length} 条结果`
         }
 
     }else{
@@ -113,10 +153,9 @@ const onQueryButtonClicked = async () =>{
     }
 
     let mergedCount = 0
-    // 去重，合并相同的语音条目
     let resultMap = new Map()
-    for(let item of ans.contents){
-        let key = item.translates[queryLanguages[0]]
+    for(let item of allContents){
+        let key = item.translates[queryLanguages[0]] + "|" + item.game
         if(!resultMap.has(key)){
             resultMap.set(key, item)
             continue
@@ -142,18 +181,28 @@ const onQueryButtonClicked = async () =>{
 
         }
     }
-    // 重排序，把有语音的条目拉到上面
     queryResult.value.length = 0
     let noVoiceEntries = []
 
+    let allEntries = []
     resultMap.forEach((item, key, _)=>{
+        allEntries.push(item)
+    })
+
+    allEntries.sort((a, b) => {
+        let aHasVoice = a.voicePaths.length > 0 ? 1 : 0
+        let bHasVoice = b.voicePaths.length > 0 ? 1 : 0
+        if (aHasVoice !== bHasVoice) return bHasVoice - aHasVoice
+        return 0
+    })
+
+    for (let item of allEntries) {
         if(item.voicePaths.length > 0){
             queryResult.value.push(item)
         }else{
             noVoiceEntries.push(item)
         }
-    })
-
+    }
 
     queryResult.value.push(...noVoiceEntries)
     keywordLast.value = keyword.value

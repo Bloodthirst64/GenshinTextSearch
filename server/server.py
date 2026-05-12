@@ -3,6 +3,8 @@ import time
 
 from flask import Flask, jsonify, request, send_file, make_response
 import controllers
+import config
+import databaseHelper
 from flask_cors import CORS
 from flask import send_from_directory
 
@@ -18,26 +20,41 @@ def buildResponse(data=None, code=200, msg="ok"):
     })
 
 
+@app.route("/api/getAvailableGames")
+def getAvailableGames():
+    games = databaseHelper.get_available_games()
+    game_info = {}
+    for g in games:
+        if g == "genshin":
+            game_info[g] = "原神"
+        elif g == "starrail":
+            game_info[g] = "崩坏：星穹铁道"
+    return buildResponse(game_info)
+
+
 @app.route("/api/getImportedTextLanguages")
 def getImportedTextLanguages():
-    return buildResponse(controllers.getImportedTextMapLangs())
+    game = request.args.get("game", "genshin")
+    return buildResponse(controllers.getImportedTextMapLangs(game))
 
 
 @app.route("/api/getImportedVoiceLanguages")
 def getImportedVoiceLanguages():
-    return buildResponse(controllers.getLoadedVoicePacks())
+    game = request.args.get("game", "genshin")
+    return buildResponse(controllers.getLoadedVoicePacks(game))
 
 
 @app.route("/api/keywordQuery", methods=['POST'])
 def keywordQuery():
     langCode = request.json['langCode']
     keyword: str = request.json['keyword']
+    game = request.json.get('game', 'genshin')
 
     if keyword.strip() == "":
         return buildResponse([])
 
     start = time.time()
-    contents = controllers.getTranslateObj(keyword, langCode)
+    contents = controllers.getTranslateObj(keyword, langCode, game)
     end = time.time()
 
     return buildResponse({
@@ -50,8 +67,9 @@ def keywordQuery():
 def getVoiceOver():
     langCode = request.json['langCode']
     voicePath = request.json['voicePath']
+    game = request.json.get('game', 'genshin')
 
-    wemStream = controllers.getVoiceBinStream(voicePath, langCode)
+    wemStream = controllers.getVoiceBinStream(voicePath, langCode, game)
     if wemStream is None:
         resp = make_response("Audio File Not Found")
         resp.headers['Access-Control-Expose-Headers'] = 'Error'
@@ -67,10 +85,11 @@ def getVoiceOver():
 
 @app.route("/api/getTalkFromHash", methods=['POST'])
 def getTalkFromHash():
-    textHash: int = request.json['textHash']
+    textHash = request.json['textHash']
+    game = request.json.get('game', 'genshin')
     try:
         start = time.time()
-        contents = controllers.getTalkFromHash(textHash)
+        contents = controllers.getTalkFromHash(textHash, game)
         end = time.time()
     except str as e:
         return buildResponse(code=114, msg=e)
@@ -83,18 +102,24 @@ def getTalkFromHash():
 
 @app.route("/api/saveSettings", methods=['POST'])
 def saveSettings():
-    newConfig = request.json['config']
-    if 'defaultSearchLanguage' in newConfig:
-        controllers.setDefaultSearchLanguage(newConfig['defaultSearchLanguage'])
+    newConfig = request.json.get('config', {})
 
-    if 'resultLanguages' in newConfig:
-        controllers.setResultLanguages(newConfig['resultLanguages'])
-
-    if 'sourceLanguage' in newConfig:
-        controllers.setSourceLanguage(newConfig['sourceLanguage'])
-
-    if 'isMale' in newConfig:
-        controllers.setIsMale(newConfig['isMale'])
+    for game in ["genshin", "starrail"]:
+        gameConfig = newConfig.get(game, {})
+        if not isinstance(gameConfig, dict):
+            continue
+        if 'defaultSearchLanguage' in gameConfig:
+            controllers.setDefaultSearchLanguage(gameConfig['defaultSearchLanguage'], game)
+        if 'resultLanguages' in gameConfig:
+            controllers.setResultLanguages(gameConfig['resultLanguages'], game)
+        if 'sourceLanguage' in gameConfig:
+            controllers.setSourceLanguage(gameConfig['sourceLanguage'], game)
+        if 'isMale' in gameConfig:
+            controllers.setIsMale(gameConfig['isMale'], game)
+        if 'nickname' in gameConfig:
+            controllers.setNickname(gameConfig['nickname'], game)
+        if 'assetDir' in gameConfig:
+            controllers.setAssetDir(gameConfig['assetDir'], game)
 
     controllers.saveConfig()
 
@@ -123,6 +148,5 @@ def serveStatic(path):
         return send_from_directory(staticDir, 'index.html')
 
 
-# Run the server if this script is executed directly
 if __name__ == "__main__":
     app.run(debug=False, host='0.0.0.0')
