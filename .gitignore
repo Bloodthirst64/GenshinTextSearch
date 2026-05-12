@@ -7,3 +7,4 @@ __pycache__/
 server/dbBuild/data/
 server/dbBuild/starrail-data/
 server/dbBuild/langs/*
+*.pkl
