@@ -233,6 +233,185 @@ class GameDB:
             else:
                 return None
 
+    def batchSelectTextMapFromTextHash(self, textHashes: list, langs: list[int] = None):
+        if not textHashes:
+            return {}
+        with closing(self.conn.cursor()) as cursor:
+            placeholders = ','.join(['?'] * len(textHashes))
+            if langs is not None and len(langs) > 0:
+                langStr = ','.join([str(i) for i in langs])
+                sql = f"select hash, content, lang from textMap where hash in ({placeholders}) and lang in ({langStr})"
+            else:
+                sql = f"select hash, content, lang from textMap where hash in ({placeholders})"
+            cursor.execute(sql, textHashes)
+            result = {}
+            for row in cursor.fetchall():
+                h = row[0]
+                if h not in result:
+                    result[h] = []
+                result[h].append((row[1], row[2]))
+            return result
+
+    def batchGetSourceFromDialogue(self, textHashes: list, langCode: int = 1):
+        if not textHashes:
+            return {}
+        with closing(self.conn.cursor()) as cursor:
+            placeholders = ','.join(['?'] * len(textHashes))
+            sql = f"""select d.textHash, d.talkerType, d.talkerId, d.talkId, d.coopQuestId
+                      from dialogue d where d.textHash in ({placeholders})"""
+            cursor.execute(sql, textHashes)
+            dialogueRows = cursor.fetchall()
+
+            talkIds = set()
+            npcIds = set()
+            for row in dialogueRows:
+                talkIds.add(row[3])
+                if row[1] == "TALK_ROLE_NPC":
+                    npcIds.add(row[2])
+
+            talkToQuest = {}
+            if talkIds:
+                talkPlaceholders = ','.join(['?'] * len(talkIds))
+                sql2 = f"select talkId, questId from questTalk where talkId in ({talkPlaceholders})"
+                cursor.execute(sql2, list(talkIds))
+                for r in cursor.fetchall():
+                    talkToQuest[r[0]] = r[1]
+
+            npcNames = {}
+            if npcIds:
+                npcPlaceholders = ','.join(['?'] * len(npcIds))
+                sql3 = f"""select npcId, content from npc, textMap
+                           where npcId in ({npcPlaceholders}) and textHash = hash and lang = ?"""
+                cursor.execute(sql3, list(npcIds) + [langCode])
+                for r in cursor.fetchall():
+                    npcNames[r[0]] = r[1]
+
+            questIds = set(talkToQuest.values())
+            questNames = {}
+            questChapters = {}
+            if questIds:
+                questPlaceholders = ','.join(['?'] * len(questIds))
+                sql4 = f"""select questId, content from quest, textMap
+                           where questId in ({questPlaceholders}) and titleTextMapHash = hash and lang = ?"""
+                cursor.execute(sql4, list(questIds) + [langCode])
+                for r in cursor.fetchall():
+                    questNames[r[0]] = r[1]
+
+                sql5 = f"""select questId, chapterTitleTextMapHash, chapterNumTextMapHash
+                           from chapter, quest where questId in ({questPlaceholders}) and quest.chapterId = chapter.chapterId"""
+                cursor.execute(sql5, list(questIds))
+                for r in cursor.fetchall():
+                    questChapters[r[0]] = (r[1], r[2])
+
+            chapterHashes = set()
+            for qid, (titleHash, numHash) in questChapters.items():
+                chapterHashes.add(titleHash)
+                if numHash:
+                    chapterHashes.add(numHash)
+
+            chapterTexts = {}
+            if chapterHashes:
+                chPlaceholders = ','.join(['?'] * len(chapterHashes))
+                sql6 = f"select hash, content from textMap where hash in ({chPlaceholders}) and lang = ?"
+                cursor.execute(sql6, list(chapterHashes) + [langCode])
+                for r in cursor.fetchall():
+                    chapterTexts[r[0]] = r[1]
+
+            result = {}
+            for row in dialogueRows:
+                textHash = row[0]
+                talkerType = row[1]
+                talkerId = row[2]
+                talkId = row[3]
+                coopQuestId = row[4]
+
+                talkerName = None
+                if talkerType == "TALK_ROLE_NPC":
+                    talkerName = npcNames.get(talkerId)
+                elif talkerType == "TALK_ROLE_PLAYER":
+                    talkerName = "主角"
+                elif talkerType == "TALK_ROLE_MATE_AVATAR":
+                    talkerName = "反主"
+
+                if coopQuestId is not None:
+                    questId = coopQuestId // 100
+                else:
+                    questId = talkToQuest.get(talkId)
+
+                if questId is None:
+                    questCompleteName = "对话文本"
+                else:
+                    questTitle = questNames.get(questId, "对话文本")
+                    chInfo = questChapters.get(questId)
+                    if chInfo:
+                        titleHash, numHash = chInfo
+                        chapterTitleText = chapterTexts.get(titleHash)
+                        if chapterTitleText:
+                            numText = chapterTexts.get(numHash) if numHash else None
+                            if numText:
+                                questCompleteName = f"{numText} · {chapterTitleText} · {questTitle}"
+                            else:
+                                questCompleteName = f"{chapterTitleText} · {questTitle}"
+                        else:
+                            questCompleteName = questTitle
+                    else:
+                        questCompleteName = questTitle
+
+                if talkerName is not None:
+                    result[textHash] = (f"{talkerName}, {questCompleteName}",)
+                else:
+                    result[textHash] = (questCompleteName,)
+
+            return result
+
+    def batchGetSourceFromFetter(self, textHashes: list, langCode: int = 1):
+        if not textHashes:
+            return {}
+        with closing(self.conn.cursor()) as cursor:
+            placeholders = ','.join(['?'] * len(textHashes))
+            sql = f"""select f.voiceFileTextTextMapHash, f.avatarId, t.content
+                      from fetters f, textMap t
+                      where f.voiceFileTextTextMapHash in ({placeholders})
+                      and f.voiceTitleTextMapHash = t.hash and t.lang = ?"""
+            cursor.execute(sql, textHashes + [langCode])
+            fetterRows = cursor.fetchall()
+
+            avatarIds = set(r[1] for r in fetterRows)
+            avatarNames = {}
+            if avatarIds:
+                avPlaceholders = ','.join(['?'] * len(avatarIds))
+                sql2 = f"""select avatarId, content from avatar, textMap
+                           where avatarId in ({avPlaceholders})
+                           and avatar.nameTextMapHash = textMap.hash and lang = ?"""
+                cursor.execute(sql2, list(avatarIds) + [langCode])
+                for r in cursor.fetchall():
+                    avatarNames[r[0]] = r[1]
+
+            result = {}
+            for row in fetterRows:
+                textHash = row[0]
+                avatarId = row[1]
+                voiceTitle = row[2]
+                avatarName = avatarNames.get(avatarId, "")
+                result[textHash] = f"{avatarName} · {voiceTitle}"
+
+            return result
+
+    def batchSelectVoicePathFromTextHash(self, textHashes: list):
+        if not textHashes:
+            return {}
+        with closing(self.conn.cursor()) as cursor:
+            placeholders = ','.join(['?'] * len(textHashes))
+            sql = f"""select d.textHash, v.voicePath
+                      from dialogue d join voice v on v.dialogueId = d.dialogueId
+                      where d.textHash in ({placeholders})"""
+            cursor.execute(sql, textHashes)
+            result = {}
+            for row in cursor.fetchall():
+                if row[0] not in result:
+                    result[row[0]] = row[1]
+            return result
+
 
 _game_dbs = {}
 

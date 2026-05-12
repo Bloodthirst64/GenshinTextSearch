@@ -56,6 +56,9 @@ create table fetters
 create index fetters_voiceFileTextTextMapHash_index
     on fetters (voiceFileTextTextMapHash);
 
+create index fetters_voiceFile_index
+    on fetters (voiceFile);
+
 create table langCode
 (
     id          integer
@@ -121,6 +124,9 @@ create table voice
     gameTrigger TEXT,
     avatarId    integer
 );
+
+create index voice_dialogueId_index
+    on voice (dialogueId);
 
 create table npc
 (

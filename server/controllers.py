@@ -54,20 +54,17 @@ def queryTextHashInfo(textHash, langs: 'list[int]', sourceLangCode: int, queryOr
         obj['isTalk'] = isTalk
         obj['origin'] = origin
 
-    if game == "genshin":
-        voicePath = selectVoicePathFromTextHash(textHash, game, db)
-        if voicePath is not None:
+    voicePath = selectVoicePathFromTextHash(textHash, game, db)
+    if voicePath is not None:
+        if game == "genshin":
             voiceExist = False
             for lang in langs:
                 if lang in languagePackReader.langPackages and languagePackReader.checkAudioBin(voicePath, lang):
                     voiceExist = True
                     break
-
             if voiceExist:
                 obj['voicePaths'].append(voicePath)
-    elif game == "starrail":
-        voicePath = selectVoicePathFromTextHash(textHash, game, db)
-        if voicePath is not None:
+        elif game == "starrail":
             starrailLanguagePackReader.loadLangPackages()
             if starrailLanguagePackReader.langPackages:
                 voiceExist = False
@@ -84,17 +81,80 @@ def queryTextHashInfo(textHash, langs: 'list[int]', sourceLangCode: int, queryOr
 
 
 def getTranslateObj(keyword: str, langCode: int, game="genshin"):
-    ans = []
-
     db = databaseHelper.get_db(game)
     contents = db.selectTextMapFromKeyword(keyword, langCode)
 
     langs = config.getResultLanguages(game)
     sourceLangCode = config.getSourceLanguage(game)
 
+    hashes = [c[0] for c in contents]
+
+    batchTranslates = db.batchSelectTextMapFromTextHash(hashes, langs)
+    batchOrigins = db.batchGetSourceFromDialogue(hashes, sourceLangCode)
+    batchFetterOrigins = db.batchGetSourceFromFetter(
+        [h for h in hashes if batchOrigins.get(h) is None], sourceLangCode
+    )
+    batchVoicePaths = db.batchSelectVoicePathFromTextHash(hashes)
+
+    if game == "starrail":
+        starrailLanguagePackReader.loadLangPackages()
+
+    ans = []
+    isMale = config.getIsMale(game)
+
     for content in contents:
-        obj = queryTextHashInfo(content[0], langs, sourceLangCode, game=game, db=db)
+        textHash = content[0]
+        obj = {'translates': {}, 'voicePaths': [], 'hash': textHash}
+
+        translates = batchTranslates.get(textHash, [])
+        for translate in translates:
+            text = translate[0]
+            lang = translate[1]
+            if text.startswith("#"):
+                obj['translates'][lang] = (placeholderHandler.replace(text, isMale, lang, game))[1:]
+            elif game == "starrail" and ("{M#" in text or "{F#" in text or "{NICKNAME}" in text):
+                obj['translates'][lang] = placeholderHandler.replace(text, isMale, lang, game)
+            else:
+                obj['translates'][lang] = text
+
+        originInfo = batchOrigins.get(textHash)
+        if originInfo is not None:
+            obj['origin'] = originInfo[0]
+            obj['isTalk'] = True
+        else:
+            fetterOrigin = batchFetterOrigins.get(textHash)
+            if fetterOrigin is not None:
+                obj['origin'] = fetterOrigin
+                obj['isTalk'] = False
+            else:
+                obj['origin'] = "其他文本"
+                obj['isTalk'] = False
+
+        voicePath = batchVoicePaths.get(textHash)
+        if voicePath is not None:
+            if game == "genshin":
+                voiceExist = False
+                for lang in langs:
+                    if lang in languagePackReader.langPackages and languagePackReader.checkAudioBin(voicePath, lang):
+                        voiceExist = True
+                        break
+                if voiceExist:
+                    obj['voicePaths'].append(voicePath)
+            elif game == "starrail":
+                if starrailLanguagePackReader.langPackages:
+                    voiceExist = False
+                    for lang in langs:
+                        if lang in starrailLanguagePackReader.langPackages and starrailLanguagePackReader.checkAudioBin(voicePath, lang):
+                            voiceExist = True
+                            break
+                    if voiceExist:
+                        obj['voicePaths'].append(voicePath)
+                else:
+                    obj['voicePaths'].append(voicePath)
+
         ans.append(obj)
+
+    ans.sort(key=lambda x: (x['origin'] == "其他文本", x['origin']))
 
     return ans
 

@@ -71,6 +71,7 @@ def import_text_map(conn):
             files = SPLIT_LANG_FILES[lang_id]
         else:
             files = [code_name]
+        imported = False
         for file_name in files:
             file_path = os.path.join(DATA_PATH, "TextMap", file_name)
             if not os.path.exists(file_path):
@@ -79,7 +80,9 @@ def import_text_map(conn):
             text_map = json.load(open(file_path, "r", encoding="utf-8"))
             for hash_val, content in tqdm(text_map.items(), total=len(text_map), desc=file_name):
                 cursor.execute(sql, (hash_val, content, lang_id))
-        cursor.execute("UPDATE langCode SET imported=1 WHERE id=?", (lang_id,))
+            imported = True
+        if imported:
+            cursor.execute("UPDATE langCode SET imported=1 WHERE id=?", (lang_id,))
         conn.commit()
     cursor.close()
 
