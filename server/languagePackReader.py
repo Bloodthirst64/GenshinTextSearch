@@ -54,11 +54,10 @@ def loadLangPackages():
 
 
 def getAudioBin(path: str, langCode: int):
-    if langCode not in langCodes:
-        raise "No voice-over for this language!"
+    if langCode not in langCodes or langCode not in langPackages:
+        return None
     langStr = langCodes[langCode]
     hashVal = fnv_hash_64((langStr + "\\" + path).lower())
-    # TODO 多语言支持，要检测是否安装了这个语言
     try:
         voicePack = langPackages[langCode]
 
@@ -66,12 +65,12 @@ def getAudioBin(path: str, langCode: int):
         wenBin, pckPath = wemFiles[0]
         return wenBin
     except FileNotFoundError | KeyError:
-        return None  # 文件被米删了
+        return None
 
 
 def checkAudioBin(path: str, langCode: int):
     if langCode not in langPackages:
-        raise "No voice-over for this language!"
+        return False
     langStr = langCodes[langCode]
     hashVal = fnv_hash_64((langStr + "\\" + path).lower())
     voicePack = langPackages[langCode]

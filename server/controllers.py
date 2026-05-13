@@ -7,6 +7,10 @@ import config
 import placeholderHandler
 
 
+class TalkNotFoundError(Exception):
+    pass
+
+
 def selectVoicePathFromTextHash(textHash, game="genshin", db=None):
     if db is None:
         db = databaseHelper.get_db(game)
@@ -74,7 +78,7 @@ def queryTextHashInfo(textHash, langs: 'list[int]', sourceLangCode: int, queryOr
                         break
                 if voiceExist:
                     obj['voicePaths'].append(voicePath)
-            else:
+            elif starrailLanguagePackReader._availableLangs:
                 obj['voicePaths'].append(voicePath)
 
     return obj
@@ -149,7 +153,7 @@ def getTranslateObj(keyword: str, langCode: int, game="genshin"):
                             break
                     if voiceExist:
                         obj['voicePaths'].append(voicePath)
-                else:
+                elif starrailLanguagePackReader._availableLangs:
                     obj['voicePaths'].append(voicePath)
 
         ans.append(obj)
@@ -163,7 +167,7 @@ def getTalkFromHash(textHash, game="genshin"):
     db = databaseHelper.get_db(game)
     talkInfo = db.getTalkInfo(textHash)
     if talkInfo is None:
-        raise "内容不属于任何对话！"
+        raise TalkNotFoundError("内容不属于任何对话！")
 
     langs = config.getResultLanguages(game)
     sourceLangCode = config.getSourceLanguage(game)
@@ -208,8 +212,12 @@ def getLoadedVoicePacks(game="genshin"):
     ans = {}
     if game == "starrail":
         starrailLanguagePackReader.loadLangPackages()
-        for packId in starrailLanguagePackReader.langPackages:
-            ans[packId] = starrailLanguagePackReader.langCodes[packId]
+        if starrailLanguagePackReader.langPackages:
+            for packId in starrailLanguagePackReader.langPackages:
+                ans[packId] = starrailLanguagePackReader.langCodes[packId]
+        else:
+            for code in starrailLanguagePackReader._availableLangs:
+                ans[code] = starrailLanguagePackReader.langCodes[code]
     else:
         for packId in languagePackReader.langPackages:
             ans[packId] = languagePackReader.langCodes[packId]

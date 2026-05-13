@@ -2,6 +2,7 @@ import os
 import pickle
 import struct
 import sys
+import threading
 
 from AudioReader.FilePackager import Package
 import config
@@ -19,7 +20,10 @@ langCodes = {
 langPackages: 'dict[int, Package]' = {}
 _voicePathToHash: 'dict[str, dict[int, int]]' = {}
 _hashToLangId: 'dict[int, int]' = {}
-_loaded = False
+_availableLangs: 'set[int]' = set()
+_mapperLoaded = False
+_pckLoaded = False
+_pckLoading = False
 
 
 def _loadMapperFromCache():
@@ -44,7 +48,11 @@ def _saveMapperToCache():
 
 
 def _loadMapper():
-    global _voicePathToHash
+    global _voicePathToHash, _mapperLoaded
+    if _mapperLoaded:
+        return
+    _mapperLoaded = True
+
     if _loadMapperFromCache():
         return
 
@@ -100,20 +108,35 @@ def _loadMapper():
     _saveMapperToCache()
 
 
-def loadLangPackages():
-    global _loaded, _hashToLangId
-    if _loaded:
-        return
-    _loaded = True
-
+def _detectAvailableLangs():
+    global _availableLangs
     starrail_path = config.getAssetDir("starrail")
     if not starrail_path:
         return
+    persistent_path = os.path.join(starrail_path, "Persistent", "Audio", "AudioPackage", "Windows")
+    if not os.path.exists(persistent_path):
+        return
+    for code, langName in langCodes.items():
+        lang_dir = os.path.join(persistent_path, langName)
+        if os.path.exists(lang_dir):
+            for fn in os.listdir(lang_dir):
+                if fn.endswith('.pck') and fn.startswith('External'):
+                    _availableLangs.add(code)
+                    break
+
+
+def _loadPckFiles():
+    global _pckLoaded, _hashToLangId
 
     _loadMapper()
 
     pkg = Package()
     loaded_langs = set()
+
+    starrail_path = config.getAssetDir("starrail")
+    if not starrail_path:
+        _pckLoaded = True
+        return
 
     persistent_path = os.path.join(starrail_path, "Persistent", "Audio", "AudioPackage", "Windows")
 
@@ -136,6 +159,21 @@ def loadLangPackages():
 
     for code in loaded_langs:
         langPackages[code] = pkg
+
+    _pckLoaded = True
+    print("starrail voice packs loaded in background")
+
+
+def loadLangPackages():
+    global _pckLoading
+    if _pckLoaded or _pckLoading:
+        return
+    _pckLoading = True
+
+    _detectAvailableLangs()
+
+    t = threading.Thread(target=_loadPckFiles, daemon=True)
+    t.start()
 
 
 def _getAudioHash(path: str, langCode: int):
