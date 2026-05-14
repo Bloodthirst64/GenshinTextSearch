@@ -5,6 +5,9 @@ import languagePackReader
 import starrailLanguagePackReader
 import config
 import placeholderHandler
+from logger import get_logger
+
+log = get_logger("controllers")
 
 
 class TalkNotFoundError(Exception):
@@ -42,7 +45,7 @@ def selectVoiceOriginFromTextHash(textHash, langCode: int, game="genshin", db=No
 def queryTextHashInfo(textHash, langs: 'list[int]', sourceLangCode: int, queryOrigin=True, game="genshin", db=None):
     if db is None:
         db = databaseHelper.get_db(game)
-    obj = {'translates': {}, 'voicePaths': [], 'hash': textHash}
+    obj = {'translates': {}, 'voicePaths': [], 'hash': str(textHash)}
     translates = db.selectTextMapFromTextHash(textHash, langs)
     for translate in translates:
         content = translate[0]
@@ -108,7 +111,7 @@ def getTranslateObj(keyword: str, langCode: int, game="genshin"):
 
     for content in contents:
         textHash = content[0]
-        obj = {'translates': {}, 'voicePaths': [], 'hash': textHash}
+        obj = {'translates': {}, 'voicePaths': [], 'hash': str(textHash)}
 
         translates = batchTranslates.get(textHash, [])
         for translate in translates:
@@ -167,18 +170,22 @@ def getTalkFromHash(textHash, game="genshin"):
     db = databaseHelper.get_db(game)
     talkInfo = db.getTalkInfo(textHash)
     if talkInfo is None:
+        log.warning(f"talkInfo is None for textHash={textHash} game={game}")
         raise TalkNotFoundError("内容不属于任何对话！")
 
     langs = config.getResultLanguages(game)
     sourceLangCode = config.getSourceLanguage(game)
 
     talkId, talkerType, talkerId, coopQuestId = talkInfo
+    log.debug(f"talkInfo: talkId={talkId} talkerType={talkerType} talkerId={talkerId} langs={langs}")
+
     if coopQuestId is None:
         questCompleteName = db.getTalkQuestName(talkId, sourceLangCode)
     else:
         questCompleteName = db.getCoopTalkQuestName(coopQuestId, sourceLangCode)
 
-    rawDialogues = db.getTalkContent(talkId, coopQuestId)
+    rawDialogues = db.getTalkContent(talkId, coopQuestId, game)
+    log.debug(f"rawDialogues count={len(rawDialogues)} questName={questCompleteName}")
     dialogues = []
 
     for rawDialogue in rawDialogues:

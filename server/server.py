@@ -7,6 +7,9 @@ import config
 import databaseHelper
 from flask_cors import CORS
 from flask import send_from_directory
+from logger import get_logger
+
+log = get_logger("server")
 
 app = Flask(__name__)
 CORS(app)
@@ -57,6 +60,12 @@ def keywordQuery():
     contents = controllers.getTranslateObj(keyword, langCode, game)
     end = time.time()
 
+    talk_count = sum(1 for c in contents if c.get('isTalk'))
+    voice_count = sum(1 for c in contents if c.get('voicePaths'))
+    log.info(f"keyword={keyword} game={game} results={len(contents)} isTalk={talk_count} hasVoice={voice_count}")
+    for c in contents[:3]:
+        log.debug(f"  hash={c['hash']} isTalk={c.get('isTalk')} origin={c.get('origin')} translates_keys={list(c.get('translates', {}).keys())} voicePaths={c.get('voicePaths')}")
+
     return buildResponse({
         'contents': contents,
         'time': (end - start)*1000
@@ -71,11 +80,13 @@ def getVoiceOver():
 
     wemStream = controllers.getVoiceBinStream(voicePath, langCode, game)
     if wemStream is None:
+        log.warning(f"voice not found: voicePath={voicePath} langCode={langCode} game={game}")
         resp = make_response("Audio File Not Found")
         resp.headers['Access-Control-Expose-Headers'] = 'Error'
         resp.headers['Error'] = 'True'
         return resp
 
+    log.info(f"voice ok: voicePath={voicePath} langCode={langCode} game={game} size={wemStream.getbuffer().nbytes}")
     return send_file(
         wemStream,
         download_name='voicePath',
@@ -85,14 +96,22 @@ def getVoiceOver():
 
 @app.route("/api/getTalkFromHash", methods=['POST'])
 def getTalkFromHash():
-    textHash = request.json['textHash']
+    textHash = int(request.json['textHash'])
     game = request.json.get('game', 'genshin')
+    log.info(f"textHash={textHash} game={game}")
     try:
         start = time.time()
         contents = controllers.getTalkFromHash(textHash, game)
         end = time.time()
+        log.info(f"success: talkQuestName={contents.get('talkQuestName')}, dialogues={len(contents.get('dialogues', []))}")
+        for i, d in enumerate(contents.get('dialogues', [])[:3]):
+            log.debug(f"  [{i}] talker={d.get('talker')} translates_keys={list(d.get('translates', {}).keys())} voicePaths={d.get('voicePaths')}")
     except controllers.TalkNotFoundError as e:
+        log.warning(f"not found: textHash={textHash} game={game} error={e}")
         return buildResponse(code=114, msg=str(e))
+    except Exception as e:
+        log.error(f"exception: textHash={textHash} game={game} error={type(e).__name__}: {e}")
+        return buildResponse(code=500, msg=str(e))
 
     return buildResponse({
         'contents': contents,
@@ -149,4 +168,5 @@ def serveStatic(path):
 
 
 if __name__ == "__main__":
+    log.info("server starting on 0.0.0.0:5000")
     app.run(debug=False, host='0.0.0.0')

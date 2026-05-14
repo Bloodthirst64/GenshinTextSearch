@@ -6,5 +6,6 @@ vgm
 __pycache__/
 server/dbBuild/data/
 server/dbBuild/starrail-data/
-server/dbBuild/langs/*
+server/dbBuild/langs/
 *.pkl
+logs/

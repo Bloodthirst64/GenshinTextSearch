@@ -218,9 +218,23 @@ class GameDB:
             else:
                 return None
 
-    def getTalkContent(self, talkId: int, coopQuestId: 'int | None') -> 'list[tuple[int, str, int, int]] | None':
+    def getTalkContent(self, talkId: int, coopQuestId: 'int | None', game: str = "genshin") -> 'list[tuple[int, str, int, int]] | None':
         with closing(self.conn.cursor()) as cursor:
-            if coopQuestId is None:
+            if game == "starrail":
+                cursor.execute('SELECT questId FROM questTalk WHERE talkId=?', (talkId,))
+                questRow = cursor.fetchone()
+                if questRow is None:
+                    return None
+                questId = questRow[0]
+                cursor.execute('SELECT talkId FROM questTalk WHERE questId=?', (questId,))
+                talkIds = [r[0] for r in cursor.fetchall()]
+                if not talkIds:
+                    return None
+                placeholders = ','.join(['?'] * len(talkIds))
+                sql1 = f'select textHash, talkerType, talkerId, dialogueId from dialogue where talkId in ({placeholders})'
+                cursor.execute(sql1, talkIds)
+                ans = cursor.fetchall()
+            elif coopQuestId is None:
                 sql1 = 'select textHash, talkerType, talkerId, dialogueId from dialogue where talkId = ? and coopQuestId is null'
                 cursor.execute(sql1, (talkId,))
                 ans = cursor.fetchall()

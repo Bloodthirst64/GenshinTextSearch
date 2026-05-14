@@ -2,6 +2,9 @@ import os
 
 from AudioReader.FilePackager import Package, fnv_hash_64
 import config
+from logger import get_logger
+
+log = get_logger("genshin.voice")
 
 langCodes = {
     1: "Chinese",
@@ -50,7 +53,7 @@ def loadLangPackages():
                 voicePack.addfile(fobj)
             langPackages[code] = voicePack
 
-            print("loaded voice pack: " + langName)
+            log.info(f"loaded voice pack: {langName}")
 
 
 def getAudioBin(path: str, langCode: int):

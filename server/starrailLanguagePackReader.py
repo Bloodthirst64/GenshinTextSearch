@@ -6,6 +6,9 @@ import threading
 
 from AudioReader.FilePackager import Package
 import config
+from logger import get_logger
+
+log = get_logger("starrail.voice")
 
 _anime_wwise_path = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'AnimeWwise'))
 _cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.starrail_voice_cache.pkl')
@@ -33,7 +36,7 @@ def _loadMapperFromCache():
     try:
         with open(_cache_path, 'rb') as f:
             _voicePathToHash = pickle.load(f)
-        print(f"Loaded {len(_voicePathToHash)} voice path mappings from cache")
+        log.info(f"Loaded {len(_voicePathToHash)} voice path mappings from cache")
         return True
     except Exception:
         return False
@@ -58,7 +61,7 @@ def _loadMapper():
 
     map_path = os.path.join(_anime_wwise_path, 'maps', 'hkrpg.map')
     if not os.path.exists(map_path):
-        print("hkrpg.map not found, starrail voice playback will not work")
+        log.warning("hkrpg.map not found, starrail voice playback will not work")
         return
 
     if _anime_wwise_path not in sys.path:
@@ -67,7 +70,7 @@ def _loadMapper():
     try:
         from mapper import Mapper
     except ImportError:
-        print("Failed to import AnimeWwise mapper, starrail voice playback will not work")
+        log.warning("Failed to import AnimeWwise mapper, starrail voice playback will not work")
         return
 
     mapper = Mapper(map_path)
@@ -104,7 +107,7 @@ def _loadMapper():
                 _voicePathToHash[name][lang_code] = hash_val
 
     mapper.reset()
-    print(f"Loaded {len(_voicePathToHash)} voice path to hash mappings")
+    log.info(f"Loaded {len(_voicePathToHash)} voice path to hash mappings")
     _saveMapperToCache()
 
 
@@ -151,7 +154,7 @@ def _loadPckFiles():
                         has_external = True
                 if has_external:
                     loaded_langs.add(code)
-                    print(f"loaded starrail voice pack: {langName}")
+                    log.info(f"loaded starrail voice pack: {langName}")
 
     for langid, hashmap in pkg.streamfiles_map.items():
         for hash_val in hashmap:
@@ -161,7 +164,7 @@ def _loadPckFiles():
         langPackages[code] = pkg
 
     _pckLoaded = True
-    print("starrail voice packs loaded in background")
+    log.info("starrail voice packs loaded in background")
 
 
 def loadLangPackages():

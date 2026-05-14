@@ -3,7 +3,7 @@ import global from "@/global/global"
 import api from "@/api/keywordQuery";
 
 import {useRoute} from "vue-router";
-import {onActivated, onDeactivated, reactive, ref, watch} from "vue";
+import {onActivated, onDeactivated, reactive, ref, computed} from "vue";
 import PlayVoiceButton from "@/components/PlayVoiceButton.vue";
 import StylizedText from "@/components/StylizedText.vue";
 import AudioPlayer from "@liripeng/vue-audio-player";
@@ -12,15 +12,21 @@ import {Close, VideoPlay} from "@element-plus/icons-vue";
 const route = useRoute()
 const keyword = ref("")
 const questName = ref("对话文本")
-const textHash = ref(0)
+const textHash = ref("")
 const queryTime = ref("0")
 const dialogues = ref([])
+const currentGame = ref("genshin")
+
+const resultLanguages = computed(() => {
+    const gameConfig = global.config[currentGame.value]
+    return gameConfig?.resultLanguages || [1, 4]
+})
 
 let playVoiceButtonDict = {}
 let playableDialogueIdList = []
 
 const reloadPage = () => {
-    textHash.value = parseInt(route.query.textHash)
+    textHash.value = route.query.textHash
     keyword.value = route.query.keyword
     playVoiceButtonDict = {}
     playableDialogueIdList = []
@@ -29,15 +35,15 @@ const reloadPage = () => {
 
 
 const reloadTalk = () => {
-    let game = route.query.game || (global.currentGame.length > 0 ? global.currentGame[0] : 'genshin')
-    api.getTalkFromHash(textHash.value, game).then(res => {
+    currentGame.value = route.query.game || (global.currentGame.length > 0 ? global.currentGame[0] : 'genshin')
+    api.getTalkFromHash(textHash.value, currentGame.value).then(res => {
         let resJson = res.json
         queryTime.value = resJson.time.toFixed(2)
         let talkContents = resJson.contents
         questName.value = talkContents.talkQuestName
         dialogues.value = talkContents.dialogues
         for (let d of dialogues.value) {
-            d.game = game
+            d.game = currentGame.value
         }
 
     }).catch(err => {
@@ -199,7 +205,7 @@ onDeactivated(() => {
         </div>
         <el-table :data="dialogues" :row-class-name="tableRowClassName">
             <el-table-column prop="talker" label="角色" width="100" />
-            <template v-for="langCode in global.config.resultLanguages">
+            <template v-for="langCode in resultLanguages">
                 <el-table-column width="40">
                     <template #header>
                         <el-tooltip :content="'播放全部' + global.languages[langCode] + '语音'">
