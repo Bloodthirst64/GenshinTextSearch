@@ -1,6 +1,92 @@
 import sqlite3
 from contextlib import closing
 import os
+import re
+
+_VOICE_PATH_CHAR_MAP = {
+    'player': '开拓者',
+    'mar7th': '三月七',
+    'danheng': '丹恒',
+    'himeko': '姬子',
+    'welt': '瓦尔特',
+    'silverwolf': '银狼',
+    'kafka': '卡芙卡',
+    'arlan': '阿兰',
+    'asta': '艾丝妲',
+    'theherta': '大黑塔',
+    'bronya': '布洛妮娅',
+    'seele': '希儿',
+    'serval': '希露瓦',
+    'gepard': '杰帕德',
+    'natasha': '娜塔莎',
+    'pela': '佩拉',
+    'clara': '克拉拉',
+    'sampo': '桑博',
+    'hook': '虎克',
+    'lynx': '玲可',
+    'luka': '卢卡',
+    'topaz': '托帕',
+    'jingyuan': '景元',
+    'bailu': '白露',
+    'yanqing': '彦卿',
+    'fuxuan': '符玄',
+    'tingyun': '停云',
+    'qingque': '青雀',
+    'luofucloud': '停云',
+    'luocha': '罗刹',
+    'misha': '米沙',
+    'xueyi': '雪衣',
+    'ruanyi': '阮•梅',
+    'drtruth': '真理医生',
+    'sparkle': '花火',
+    'blackswan': '黑天鹅',
+    'acheron': '黄泉',
+    'aventurine': '砂金',
+    'gallagher': '加拉格尔',
+    'robin': '知更鸟',
+    'sunday': '星期日',
+    'boothill': '波提欧',
+    'jade': '翡翠',
+    'firefly': '流萤',
+    'yunli': '云璃',
+    'jiaoqiu': '椒丘',
+    'feixiao': '飞霄',
+    'lingsha': '灵砂',
+    'moze': '貊泽',
+    'rappa': '乱破',
+    'tribbie': '缇宝',
+    'mydeimos': '遐蝶',
+    'aglaea': '阿格莱雅',
+    'castorice': '刻律德拉',
+    'phainon': '白厄',
+    'hyacine': '风堇',
+    'anaxa': '阿那克萨',
+    'cipher': '赛飞儿',
+    'hysilens': '海瑟音',
+    'mem': '忆灵',
+    'lykos': '吕科斯',
+    'cyrene': '昔涟',
+    'danfeng': '丹枫',
+    'yingxing': '应星',
+    'baiheng': '白珩',
+    'jingliu': '镜流',
+    'jingtian': '景天',
+    'ruanyue': '阮•梅',
+    'wenzhao': '文韬',
+    'shujie': '舒杰',
+    'owen': '欧文',
+    'sushang': '素裳',
+    'yukong': '驭空',
+    'march7th': '三月七',
+    'danhengil': '丹恒•饮月',
+    'danhengcb': '丹恒',
+    'castrux': '寰宇',
+    'owl': '智鸮',
+    'caelus': '穹',
+    'stelle': '星',
+    'caelusf': '星',
+    'stellem': '穹',
+}
 
 
 class GameDB:
@@ -14,11 +100,36 @@ class GameDB:
         self._wanderNames = {}
         self._travellerNames = {}
         self._game = game
+        self.conn.create_function("REGEXP", 2, self._regexp)
+
+    @staticmethod
+    def _regexp(pattern, string):
+        if string is None:
+            return 0
+        return 1 if re.search(pattern, string, re.IGNORECASE) else 0
 
     def selectTextMapFromKeyword(self, keyWord: str, langCode: int):
         with closing(self.conn.cursor()) as cursor:
             sql1 = "select hash, content from textMap where lang=? and content like ? limit 200"
             cursor.execute(sql1, (langCode, '%{}%'.format(keyWord)))
+            matches = cursor.fetchall()
+            return matches
+
+    def selectTextMapFromKeywordWordMode(self, expanded_word_groups, langCode):
+        with closing(self.conn.cursor()) as cursor:
+            conditions = []
+            params = []
+            for group in expanded_word_groups:
+                group_conditions = []
+                for form in group:
+                    escaped = re.escape(form)
+                    group_conditions.append("content REGEXP ?")
+                    params.append(r'\b' + escaped + r'\b')
+                conditions.append("(" + " OR ".join(group_conditions) + ")")
+
+            where_clause = " AND ".join(conditions)
+            sql = f"select hash, content from textMap where lang=? and ({where_clause}) limit 200"
+            cursor.execute(sql, [langCode] + params)
             matches = cursor.fetchall()
             return matches
 
@@ -129,6 +240,49 @@ class GameDB:
             if talkerName == '#{REALNAME[ID(1)|HOSTONLY(true)]}':
                 talkerName = self.getWanderName(langCode)
             return talkerName
+
+    @staticmethod
+    def _extractCharIdFromVoicePath(voicePath: str) -> 'str | None':
+        if not voicePath:
+            return None
+        parts = voicePath.split('_')
+        if len(parts) >= 4 and parts[0].startswith('chapter'):
+            return parts[2]
+        if len(parts) >= 3 and parts[0] == 'vo':
+            return parts[1]
+        return None
+
+    @staticmethod
+    def _charIdToDisplayName(charId: str) -> str:
+        if not charId:
+            return None
+        return _VOICE_PATH_CHAR_MAP.get(charId)
+
+    def getTalkerNameFromVoice(self, dialogueId, langCode: int = 1) -> 'str | None':
+        with closing(self.conn.cursor()) as cursor:
+            cursor.execute('SELECT voicePath FROM voice WHERE dialogueId=?', (dialogueId,))
+            row = cursor.fetchone()
+            if row is None or row[0] is None:
+                return None
+            charId = self._extractCharIdFromVoicePath(row[0])
+            displayName = self._charIdToDisplayName(charId)
+            if displayName:
+                return displayName
+            return charId
+
+    def batchGetTalkerNameFromVoice(self, dialogueIds: list) -> dict:
+        if not dialogueIds:
+            return {}
+        with closing(self.conn.cursor()) as cursor:
+            placeholders = ','.join(['?'] * len(dialogueIds))
+            cursor.execute(f'SELECT dialogueId, voicePath FROM voice WHERE dialogueId IN ({placeholders})', dialogueIds)
+            result = {}
+            for row in cursor.fetchall():
+                dialogueId, voicePath = row
+                charId = self._extractCharIdFromVoicePath(voicePath)
+                displayName = self._charIdToDisplayName(charId)
+                result[dialogueId] = displayName if displayName else charId
+            return result
 
     def getTalkQuestId(self, talkId: int) -> int | None:
         with closing(self.conn.cursor()) as cursor:

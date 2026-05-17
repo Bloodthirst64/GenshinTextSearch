@@ -5,6 +5,7 @@ import languagePackReader
 import starrailLanguagePackReader
 import config
 import placeholderHandler
+import wordSearchHelper
 from logger import get_logger
 
 log = get_logger("controllers")
@@ -87,9 +88,13 @@ def queryTextHashInfo(textHash, langs: 'list[int]', sourceLangCode: int, queryOr
     return obj
 
 
-def getTranslateObj(keyword: str, langCode: int, game="genshin"):
+def getTranslateObj(keyword: str, langCode: int, game="genshin", word_mode=False):
     db = databaseHelper.get_db(game)
-    contents = db.selectTextMapFromKeyword(keyword, langCode)
+    if word_mode and langCode == 4:
+        expanded = wordSearchHelper.expand_query_words(keyword)
+        contents = db.selectTextMapFromKeywordWordMode(expanded, langCode)
+    else:
+        contents = db.selectTextMapFromKeyword(keyword, langCode)
 
     langs = config.getResultLanguages(game)
     sourceLangCode = config.getSourceLanguage(game)
@@ -105,6 +110,14 @@ def getTranslateObj(keyword: str, langCode: int, game="genshin"):
 
     if game == "starrail":
         starrailLanguagePackReader.loadLangPackages()
+        dialogueIds_for_talker = {}
+        for h in hashes:
+            vp = batchVoicePaths.get(h)
+            if vp is not None:
+                charId = databaseHelper.GameDB._extractCharIdFromVoicePath(vp)
+                if charId:
+                    displayName = databaseHelper.GameDB._charIdToDisplayName(charId)
+                    dialogueIds_for_talker[h] = displayName if displayName else charId
 
     ans = []
     isMale = config.getIsMale(game)
@@ -128,6 +141,8 @@ def getTranslateObj(keyword: str, langCode: int, game="genshin"):
         if originInfo is not None:
             obj['origin'] = originInfo[0]
             obj['isTalk'] = True
+            if game == "genshin" and ', ' in originInfo[0]:
+                obj['talker'] = originInfo[0].split(', ')[0]
         else:
             fetterOrigin = batchFetterOrigins.get(textHash)
             if fetterOrigin is not None:
@@ -136,6 +151,11 @@ def getTranslateObj(keyword: str, langCode: int, game="genshin"):
             else:
                 obj['origin'] = "其他文本"
                 obj['isTalk'] = False
+
+        if game == "starrail":
+            talker = dialogueIds_for_talker.get(textHash)
+            if talker:
+                obj['talker'] = talker
 
         voicePath = batchVoicePaths.get(textHash)
         if voicePath is not None:
@@ -188,10 +208,19 @@ def getTalkFromHash(textHash, game="genshin"):
     log.debug(f"rawDialogues count={len(rawDialogues)} questName={questCompleteName}")
     dialogues = []
 
+    if game == "starrail":
+        dialogueIds = [rd[3] for rd in rawDialogues]
+        talkerNamesFromVoice = db.batchGetTalkerNameFromVoice(dialogueIds)
+    else:
+        talkerNamesFromVoice = {}
+
     for rawDialogue in rawDialogues:
         textHash, talkerType, talkerId, dialogueId = rawDialogue
         obj = queryTextHashInfo(textHash, langs, sourceLangCode, False, game, db)
-        obj['talker'] = db.getTalkerName(talkerType, talkerId, sourceLangCode)
+        if game == "starrail":
+            obj['talker'] = talkerNamesFromVoice.get(dialogueId)
+        else:
+            obj['talker'] = db.getTalkerName(talkerType, talkerId, sourceLangCode)
         obj['dialogueId'] = dialogueId
         dialogues.append(obj)
 

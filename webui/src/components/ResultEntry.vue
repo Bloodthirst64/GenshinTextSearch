@@ -52,7 +52,8 @@ const gotoTalk = () => {
         <p class="info">
             <span class="origin" :class="{talkOrigin: props.translateObj.isTalk}" @click="gotoTalk">
                 <el-tag v-if="props.translateObj.game" :type="props.translateObj.game === 'starrail' ? 'warning' : ''" size="small" class="gameTag">{{props.translateObj.gameName}}</el-tag>
-                来源：{{props.translateObj.origin}}
+                <span v-if="props.translateObj.talker" class="talkerName">{{props.translateObj.talker}}</span>
+                <span class="originText">来源：{{props.translateObj.origin}}</span>
                 <span class="gotoIcon" v-if="props.translateObj.isTalk">&gt</span>
             </span>
         </p>
@@ -80,6 +81,12 @@ const gotoTalk = () => {
 
 .origin{
     color: #ab9d96;
+}
+
+.talkerName{
+    color: var(--el-color-primary);
+    margin-right: 6px;
+    font-weight: 500;
 }
 
 .gameTag{

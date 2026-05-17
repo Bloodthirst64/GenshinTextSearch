@@ -52,12 +52,13 @@ def keywordQuery():
     langCode = request.json['langCode']
     keyword: str = request.json['keyword']
     game = request.json.get('game', 'genshin')
+    wordMode = request.json.get('wordMode', False)
 
     if keyword.strip() == "":
         return buildResponse([])
 
     start = time.time()
-    contents = controllers.getTranslateObj(keyword, langCode, game)
+    contents = controllers.getTranslateObj(keyword, langCode, game, word_mode=wordMode)
     end = time.time()
 
     talk_count = sum(1 for c in contents if c.get('isTalk'))

@@ -9,3 +9,4 @@ server/dbBuild/starrail-data/
 server/dbBuild/langs/
 *.pkl
 logs/
+.trae/

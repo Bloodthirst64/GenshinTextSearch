@@ -11,11 +11,12 @@ const queryBaidu = (keyword) => {
     // });
 };
 
-const queryByKeyword = (keyword, langCode, game) => {
+const queryByKeyword = (keyword, langCode, game, wordMode) => {
     return request.post("/api/keywordQuery", {
         keyword: keyword,
         langCode: langCode,
-        game: game || "genshin"
+        game: game || "genshin",
+        wordMode: wordMode || false
     });
 };
 

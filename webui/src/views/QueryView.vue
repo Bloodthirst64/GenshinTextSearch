@@ -24,6 +24,14 @@
                 <el-button :icon="Search" @click="onQueryButtonClicked"/>
             </template>
         </el-input>
+        <el-switch
+            v-model="wordSearchEnabled"
+            active-text="单词搜索"
+            inactive-text=""
+            v-show="selectedInputLanguage === '4'"
+            style="margin-left: 12px;"
+            @change="onWordSearchChanged"
+        />
         <span class="searchSummary">
             {{ searchSummary }}
         </span>
@@ -86,6 +94,7 @@ const keyword = ref("")
 const keywordLast = ref("")
 const supportedInputLanguage = ref({})
 const searchSummary = ref("")
+const wordSearchEnabled = ref(localStorage.getItem('wordSearchEnabled') === 'true')
 
 onBeforeMount(async ()=>{
     supportedInputLanguage.value = global.languages
@@ -106,6 +115,10 @@ watch(() => global.languages, async (newLangs) => {
 watch(selectedInputLanguage, (newLang) => {
     setStoredSearchLang(newLang)
 })
+
+const onWordSearchChanged = (val) => {
+    localStorage.setItem('wordSearchEnabled', val)
+}
 
 /**
  *
@@ -134,7 +147,7 @@ const onQueryButtonClicked = async () =>{
     }
 
     for (let game of global.currentGame) {
-        let ans = (await api.queryByKeyword(keyword.value, selectedInputLanguage.value, game)).json
+        let ans = (await api.queryByKeyword(keyword.value, selectedInputLanguage.value, game, wordSearchEnabled.value)).json
         totalTime += ans.time
         for (let item of ans.contents) {
             item.game = game
