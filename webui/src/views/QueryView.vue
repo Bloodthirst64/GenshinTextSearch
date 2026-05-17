@@ -64,7 +64,7 @@
 import {onBeforeMount, ref, watch} from 'vue';
 import {Close, Delete, Download, Plus, ZoomIn} from '@element-plus/icons-vue';
 import { Search } from '@element-plus/icons-vue'
-import global from "@/global/global"
+import global, {getStoredSearchLang, setStoredSearchLang} from "@/global/global"
 import api from "@/api/keywordQuery"
 import TranslateDisplay from "@/components/ResultEntry.vue";
 import AudioPlayer from "@liripeng/vue-audio-player";
@@ -75,11 +75,13 @@ const queryResult = ref([])
 
 
 const getSearchLanguage = () => {
+    let stored = getStoredSearchLang()
+    if (stored !== null) return stored
     let firstGame = global.currentGame[0] || "genshin"
     return (global.config[firstGame]?.defaultSearchLanguage ?? 4) + ''
 }
 
-const selectedInputLanguage = ref('4')
+const selectedInputLanguage = ref(getSearchLanguage())
 const keyword = ref("")
 const keywordLast = ref("")
 const supportedInputLanguage = ref({})
@@ -100,6 +102,10 @@ watch(() => global.languages, async (newLangs) => {
     supportedInputLanguage.value = newLangs
     selectedInputLanguage.value = getSearchLanguage()
 }, {deep: true})
+
+watch(selectedInputLanguage, (newLang) => {
+    setStoredSearchLang(newLang)
+})
 
 /**
  *

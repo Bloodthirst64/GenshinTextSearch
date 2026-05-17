@@ -114,10 +114,17 @@ onMounted(async () => {
 
     let gamesRes = (await api.getAvailableGames()).json
     global.availableGames = gamesRes
-    let firstGame = Object.keys(gamesRes)[0]
-    if (firstGame) {
-        global.currentGame = [firstGame]
-        lastGames = [firstGame]
+    let availableKeys = Object.keys(gamesRes)
+    let storedGame = global.currentGame.filter(g => availableKeys.includes(g))
+    if (storedGame.length > 0) {
+        global.currentGame = storedGame
+        lastGames = [...storedGame]
+    } else {
+        let firstGame = availableKeys[0]
+        if (firstGame) {
+            global.currentGame = [firstGame]
+            lastGames = [firstGame]
+        }
     }
 
     let mergedLangs = {}
