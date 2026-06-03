@@ -5,6 +5,7 @@ from flask import Flask, jsonify, request, send_file, make_response
 import controllers
 import config
 import databaseHelper
+import lyricsData
 from flask_cors import CORS
 from flask import send_from_directory
 from logger import get_logger
@@ -118,6 +119,47 @@ def getTalkFromHash():
         'contents': contents,
         'time': (end - start)*1000
     })
+
+
+@app.route("/api/lyricsSearch", methods=['POST'])
+def lyricsSearch():
+    keyword = request.json.get('keyword', '').strip()
+    game = request.json.get('game', None)
+    if keyword == "":
+        return buildResponse([])
+
+    start = time.time()
+    results = lyricsData.search_lyrics(keyword, game)
+    end = time.time()
+
+    log.info(f"lyricsSearch: keyword={keyword} game={game} results={len(results)}")
+    return buildResponse({
+        'contents': results,
+        'time': (end - start)*1000
+    })
+
+
+@app.route("/api/getLyricsSongs")
+def getLyricsSongs():
+    game = request.args.get("game", None)
+    songs = lyricsData.get_all_songs(game)
+    return buildResponse(songs)
+
+
+@app.route("/api/getLyricsDetail", methods=['POST'])
+def getLyricsDetail():
+    title = request.json.get('title', '')
+    game = request.json.get('game', None)
+    song = lyricsData.get_song_detail(title, game)
+    if song is None:
+        return buildResponse(code=404, msg="未找到该歌曲")
+    return buildResponse(song)
+
+
+@app.route("/api/reloadLyricsData", methods=['POST'])
+def reloadLyricsData():
+    songs = lyricsData.reload_lyrics_data()
+    return buildResponse({"count": len(songs)})
 
 
 @app.route("/api/saveSettings", methods=['POST'])
