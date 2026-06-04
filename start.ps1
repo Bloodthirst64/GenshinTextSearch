@@ -8,4 +8,4 @@ Write-Host ""
 Write-Host "启动后端服务器..."
 Set-Location "$PSScriptRoot\server"
 conda activate GenshinTextSearch
-python server.py
+python app.py

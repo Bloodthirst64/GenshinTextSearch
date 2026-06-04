@@ -1,10 +1,10 @@
 import io
 
 import databaseHelper
-import voicePackChecker
+from voice.checker import get_checker
 import config
-import placeholderHandler
-import wordSearchHelper
+from text.placeholder import replace as placeholderReplace
+from text.wordSearch import expand_query_words
 from logger import get_logger
 
 log = get_logger("controllers")
@@ -50,9 +50,9 @@ def queryTextHashInfo(textHash, langs: 'list[int]', sourceLangCode: int, queryOr
     for translate in translates:
         content = translate[0]
         if content.startswith("#"):
-            obj['translates'][translate[1]] = (placeholderHandler.replace(content, config.getIsMale(game), translate[1], game))[1:]
+            obj['translates'][translate[1]] = (placeholderReplace(content, config.getIsMale(game), translate[1], game))[1:]
         elif game == "starrail" and ("{M#" in content or "{F#" in content or "{NICKNAME}" in content):
-            obj['translates'][translate[1]] = placeholderHandler.replace(content, config.getIsMale(game), translate[1], game)
+            obj['translates'][translate[1]] = placeholderReplace(content, config.getIsMale(game), translate[1], game)
         else:
             obj['translates'][translate[1]] = content
 
@@ -63,7 +63,7 @@ def queryTextHashInfo(textHash, langs: 'list[int]', sourceLangCode: int, queryOr
 
     voicePath = selectVoicePathFromTextHash(textHash, game, db)
     if voicePath is not None:
-        checker = voicePackChecker.get_checker(game)
+        checker = get_checker(game)
         checker.ensure_loaded()
         if checker.should_append_voice(voicePath, langs):
             obj['voicePaths'].append(voicePath)
@@ -74,7 +74,7 @@ def queryTextHashInfo(textHash, langs: 'list[int]', sourceLangCode: int, queryOr
 def getTranslateObj(keyword: str, langCode: int, game="genshin", word_mode=False):
     db = databaseHelper.get_db(game)
     if word_mode and langCode == 4:
-        expanded = wordSearchHelper.expand_query_words(keyword)
+        expanded = expand_query_words(keyword)
         contents = db.selectTextMapFromKeywordWordMode(expanded, langCode)
     else:
         contents = db.selectTextMapFromKeyword(keyword, langCode)
@@ -92,7 +92,7 @@ def getTranslateObj(keyword: str, langCode: int, game="genshin", word_mode=False
     batchVoicePaths = db.batchSelectVoicePathFromTextHash(hashes)
 
     if game == "starrail":
-        checker = voicePackChecker.get_checker(game)
+        checker = get_checker(game)
         checker.ensure_loaded()
         dialogueIds_for_talker = {}
         for h in hashes:
@@ -129,9 +129,9 @@ def getTranslateObj(keyword: str, langCode: int, game="genshin", word_mode=False
             text = translate[0]
             lang = translate[1]
             if text.startswith("#"):
-                obj['translates'][lang] = (placeholderHandler.replace(text, isMale, lang, game))[1:]
+                obj['translates'][lang] = (placeholderReplace(text, isMale, lang, game))[1:]
             elif game == "starrail" and ("{M#" in text or "{F#" in text or "{NICKNAME}" in text):
-                obj['translates'][lang] = placeholderHandler.replace(text, isMale, lang, game)
+                obj['translates'][lang] = placeholderReplace(text, isMale, lang, game)
             else:
                 obj['translates'][lang] = text
 
@@ -165,7 +165,7 @@ def getTranslateObj(keyword: str, langCode: int, game="genshin", word_mode=False
 
         voicePath = batchVoicePaths.get(textHash)
         if voicePath is not None:
-            checker = voicePackChecker.get_checker(game)
+            checker = get_checker(game)
             if checker.should_append_voice(voicePath, langs):
                 obj['voicePaths'].append(voicePath)
 
@@ -224,7 +224,7 @@ def getTalkFromHash(textHash, game="genshin"):
 
 
 def getVoiceBinStream(voicePath, langCode, game="genshin"):
-    checker = voicePackChecker.get_checker(game)
+    checker = get_checker(game)
     checker.ensure_loaded()
     wemBin = checker.get_audio_bin(voicePath, langCode)
     if wemBin is None:
@@ -233,7 +233,7 @@ def getVoiceBinStream(voicePath, langCode, game="genshin"):
 
 
 def getLoadedVoicePacks(game="genshin"):
-    checker = voicePackChecker.get_checker(game)
+    checker = get_checker(game)
     checker.ensure_loaded()
     return checker.get_loaded_voice_packs()
 

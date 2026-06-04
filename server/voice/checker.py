@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 
-import languagePackReader
-import starrailLanguagePackReader
+from voice.genshin_reader import langPackages as genshin_langPackages, langCodes as genshin_langCodes, checkAudioBin as genshin_checkAudioBin, getAudioBin as genshin_getAudioBin
+from voice.starrail_reader import langPackages as starrail_langPackages, langCodes as starrail_langCodes, checkAudioBin as starrail_checkAudioBin, getAudioBin as starrail_getAudioBin, loadLangPackages as starrail_loadLangPackages, _availableLangs as starrail_availableLangs
 
 
 class VoicePackChecker(ABC):
@@ -64,43 +64,43 @@ class GenshinVoicePackChecker(VoicePackChecker):
         pass
 
     def get_lang_packages(self) -> dict:
-        return languagePackReader.langPackages
+        return genshin_langPackages
 
     def get_lang_codes(self) -> dict:
-        return languagePackReader.langCodes
+        return genshin_langCodes
 
     def check_audio_bin(self, voice_path: str, lang_code: int) -> bool:
-        return languagePackReader.checkAudioBin(voice_path, lang_code)
+        return genshin_checkAudioBin(voice_path, lang_code)
 
     def get_audio_bin(self, voice_path: str, lang_code: int):
-        return languagePackReader.getAudioBin(voice_path, lang_code)
+        return genshin_getAudioBin(voice_path, lang_code)
 
     def has_available_langs(self) -> bool:
-        return bool(languagePackReader.langPackages)
+        return bool(genshin_langPackages)
 
 
 class StarrailVoicePackChecker(VoicePackChecker):
 
     def ensure_loaded(self) -> None:
-        starrailLanguagePackReader.loadLangPackages()
+        starrail_loadLangPackages()
 
     def get_lang_packages(self) -> dict:
-        return starrailLanguagePackReader.langPackages
+        return starrail_langPackages
 
     def get_lang_codes(self) -> dict:
-        return starrailLanguagePackReader.langCodes
+        return starrail_langCodes
 
     def check_audio_bin(self, voice_path: str, lang_code: int) -> bool:
-        return starrailLanguagePackReader.checkAudioBin(voice_path, lang_code)
+        return starrail_checkAudioBin(voice_path, lang_code)
 
     def get_audio_bin(self, voice_path: str, lang_code: int):
-        return starrailLanguagePackReader.getAudioBin(voice_path, lang_code)
+        return starrail_getAudioBin(voice_path, lang_code)
 
     def has_available_langs(self) -> bool:
-        return bool(starrailLanguagePackReader._availableLangs)
+        return bool(starrail_availableLangs)
 
     def _get_available_lang_info(self) -> dict:
-        return {code: starrailLanguagePackReader.langCodes[code] for code in starrailLanguagePackReader._availableLangs}
+        return {code: starrail_langCodes[code] for code in starrail_availableLangs}
 
 
 _checkers = {

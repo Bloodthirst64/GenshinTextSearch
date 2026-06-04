@@ -4,7 +4,7 @@ import os
 import re
 import time
 
-DATA_PATH = os.path.join(os.path.dirname(__file__), '..', 'server', 'lyrics_data.json')
+DATA_PATH = os.path.join(os.path.dirname(__file__), '..', 'lyrics_data.json')
 SCRAPED_IDS_PATH = os.path.join(os.path.dirname(__file__), 'scraped_ids.json')
 
 headers = {

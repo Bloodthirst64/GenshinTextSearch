@@ -10,8 +10,8 @@ from logger import get_logger
 
 log = get_logger("starrail.voice")
 
-_anime_wwise_path = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'AnimeWwise'))
-_cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.starrail_voice_cache.pkl')
+_anime_wwise_path = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'AnimeWwise'))
+_cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.starrail_voice_cache.pkl')
 
 langCodes = {
     1: "Chinese(PRC)",

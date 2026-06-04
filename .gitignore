@@ -10,3 +10,4 @@ server/dbBuild/langs/
 *.pkl
 logs/
 .trae/
+server/tools/scraped_ids.json

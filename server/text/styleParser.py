@@ -98,4 +98,3 @@ if __name__ == "__main__":
     t = "<color=nmsl>sd<i>hahahahaha</i>sd</color>sasdadsadsadsas"
     ans1 = tagParse(t)
     print(ans1)
-
