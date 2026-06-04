@@ -50,7 +50,7 @@ def getImportedVoiceLanguages():
 
 @app.route("/api/keywordQuery", methods=['POST'])
 def keywordQuery():
-    langCode = request.json['langCode']
+    langCode = int(request.json['langCode'])
     keyword: str = request.json['keyword']
     game = request.json.get('game', 'genshin')
     wordMode = request.json.get('wordMode', False)
@@ -76,7 +76,7 @@ def keywordQuery():
 
 @app.route("/api/getVoiceOver", methods=['POST'])
 def getVoiceOver():
-    langCode = request.json['langCode']
+    langCode = int(request.json['langCode'])
     voicePath = request.json['voicePath']
     game = request.json.get('game', 'genshin')
 
@@ -98,7 +98,7 @@ def getVoiceOver():
 
 @app.route("/api/getTalkFromHash", methods=['POST'])
 def getTalkFromHash():
-    textHash = int(request.json['textHash'])
+    textHash = request.json['textHash']
     game = request.json.get('game', 'genshin')
     log.info(f"textHash={textHash} game={game}")
     try:

@@ -5,15 +5,26 @@ import re
 
 _VOICE_PATH_CHAR_MAP = {
     'player': '开拓者',
+    'playerboy': '穹',
     'mar7th': '三月七',
+    'march7th': '三月七',
+    'sanyueqi': '三月七',
     'danheng': '丹恒',
+    'danhengil': '丹恒•饮月',
+    'danhengcb': '丹恒',
+    'danhengjiyi': '丹恒',
+    'jydanfeng': '丹枫',
     'himeko': '姬子',
+    'himekojiyi': '姬子',
     'welt': '瓦尔特',
     'silverwolf': '银狼',
+    'silverwolflv999': '银狼',
     'kafka': '卡芙卡',
     'arlan': '阿兰',
     'asta': '艾丝妲',
+    'herta': '黑塔',
     'theherta': '大黑塔',
+    'hertadoll': '黑塔',
     'bronya': '布洛妮娅',
     'seele': '希儿',
     'serval': '希露瓦',
@@ -36,56 +47,154 @@ _VOICE_PATH_CHAR_MAP = {
     'luocha': '罗刹',
     'misha': '米沙',
     'xueyi': '雪衣',
+    'xueyijiqiao': '雪衣',
     'ruanyi': '阮•梅',
+    'ruanmei': '阮•梅',
+    'ruanyue': '阮•梅',
     'drtruth': '真理医生',
+    'ratio': '真理医生',
     'sparkle': '花火',
     'blackswan': '黑天鹅',
+    'blackswanjiyi': '黑天鹅',
     'acheron': '黄泉',
     'aventurine': '砂金',
     'gallagher': '加拉格尔',
     'robin': '知更鸟',
     'sunday': '星期日',
+    'sundayow': '星期日',
     'boothill': '波提欧',
+    'littleboothill': '波提欧',
     'jade': '翡翠',
     'firefly': '流萤',
+    'sam': '萨姆',
     'yunli': '云璃',
     'jiaoqiu': '椒丘',
     'feixiao': '飞霄',
+    'feixiaohy': '飞霄',
+    'feixiaoyn': '飞霄',
     'lingsha': '灵砂',
     'moze': '貊泽',
     'rappa': '乱破',
+    'rappasy': '乱破',
     'tribbie': '缇宝',
+    'jisitribbie': '缇宝',
+    'mydei': '遐蝶',
     'mydeimos': '遐蝶',
+    'mydeimosly': '遐蝶',
     'aglaea': '阿格莱雅',
+    'aglaeahy': '阿格莱雅',
     'castorice': '刻律德拉',
+    'castoricehy': '刻律德拉',
+    'castoricetitan': '刻律德拉',
     'phainon': '白厄',
+    'phainonjiyi': '白厄',
+    'phainonly': '白厄',
     'hyacine': '风堇',
+    'hyacinetitan': '风堇',
     'anaxa': '阿那克萨',
+    'anaxapb': '阿那克萨',
     'cipher': '赛飞儿',
+    'shaocipher': '赛飞儿',
     'hysilens': '海瑟音',
     'mem': '忆灵',
     'lykos': '吕科斯',
+    'lykosecho': '吕科斯',
+    'lykosjiyi': '吕科斯',
     'cyrene': '昔涟',
+    'cyrenejiyi': '昔涟',
+    'cyrenely': '昔涟',
     'danfeng': '丹枫',
     'yingxing': '应星',
     'baiheng': '白珩',
     'jingliu': '镜流',
     'jingtian': '景天',
-    'ruanyue': '阮•梅',
     'wenzhao': '文韬',
     'shujie': '舒杰',
     'owen': '欧文',
     'sushang': '素裳',
     'yukong': '驭空',
-    'march7th': '三月七',
-    'danhengil': '丹恒•饮月',
-    'danhengcb': '丹恒',
     'castrux': '寰宇',
     'owl': '智鸮',
     'caelus': '穹',
     'stelle': '星',
     'caelusf': '星',
     'stellem': '穹',
+    'playerfan': '开拓者',
+    'playertt': '开拓者',
+    # 重要NPC
+    'pompom': '帕姆',
+    'cocolia': '可可利亚',
+    'blade': '刃',
+    'argenti': '银枝',
+    'screwllum': '螺丝咕姆',
+    'svarog': '史瓦罗',
+    'oleg': '奥列格',
+    'tingyun1': '停云',
+    'tingyun2': '停云',
+    'tingyun3': '停云',
+    'tingyun4': '停云',
+    'tingyun5': '停云',
+    'tingyun6': '停云',
+    'tingyun7': '停云',
+    'tingyun8': '停云',
+    'tingyun9': '停云',
+    'fakemar7th': '三月七',
+    'fakemar7thB': '三月七',
+    'fakemar7thC': '三月七',
+    'scott': '斯科特',
+    'scottdj': '斯科特',
+    'scottqm': '斯科特',
+    'scottzy': '斯科特',
+    'dahlia': '大丽花',
+    'siobhan': '茜芭娜',
+    'cerces': '瑟西丝',
+    'cercesnpc': '瑟西丝',
+    'cerydra': '刻律德菈',
+    'empedocles': '恩培多克勒',
+    'ianos': '伊阿诺斯',
+    'philia': '菲莉亚',
+    'pythias': '皮提亚斯',
+    'mnestia': '涅斯提亚',
+    'evernight': '永夜',
+    'phantylia': '幻胧',
+    'echo': '回音',
+    'elio': '艾利欧',
+    'dennis': '丹尼斯',
+    'grady': '格雷迪',
+    'woolsey': '伍尔西',
+    'tiernan': '蒂尔南',
+    'giovanni': '乔瓦尼',
+    'edward': '爱德华',
+    'joshua': '约书亚',
+    'thomas': '托马斯',
+    'eric': '埃里克',
+    'alina': '阿丽娜',
+    'oldgoethe': '老歌德',
+    'galba': '加尔巴',
+    'dobra': '多布拉',
+    'gertie': '格蒂',
+    'livia': '莉维娅',
+    'woolsey': '伍尔西',
+    'katrina': '卡特琳娜',
+    'granholm': '格兰霍姆',
+    'wildfiremumberA': '地火成员',
+    'handrake': '汉德拉克',
+    'hieronymus': '希罗尼穆斯',
+    'oldoti': '奥蒂',
+    'oldotisp': '奥蒂',
+    'kalvpusuo': '卡尔普索',
+    'weiertusi': '维尔特斯',
+    'gelisha': '格丽莎',
+    'weijiniya': '维吉妮亚',
+    'nuodusi': '诺尔多斯',
+    'demiteli': '德米特里',
+    'tuolemi': '托勒密',
+    'suolabisi': '索拉比斯',
+    'labinusi': '拉比努斯',
+    'gelaweitasi': '格拉维塔斯',
+    'khaslana': '卡斯兰娜',
+    'ambassador': '使者',
+    'messenger': '信使',
 }
 
 
@@ -117,20 +226,38 @@ class GameDB:
 
     def selectTextMapFromKeywordWordMode(self, expanded_word_groups, langCode):
         with closing(self.conn.cursor()) as cursor:
-            conditions = []
-            params = []
+            # 先用 LIKE 快速缩小候选范围（利用 SQLite 的 LIKE 优化），
+            # 再用 Python re 做精确的词边界匹配，避免全表 REGEXP 扫描
+            like_conditions = []
+            like_params = []
             for group in expanded_word_groups:
                 group_conditions = []
                 for form in group:
-                    escaped = re.escape(form)
-                    group_conditions.append("content REGEXP ?")
-                    params.append(r'\b' + escaped + r'\b')
-                conditions.append("(" + " OR ".join(group_conditions) + ")")
+                    group_conditions.append("content LIKE ?")
+                    like_params.append('%{}%'.format(form))
+                like_conditions.append("(" + " OR ".join(group_conditions) + ")")
 
-            where_clause = " AND ".join(conditions)
-            sql = f"select hash, content from textMap where lang=? and ({where_clause}) limit 200"
-            cursor.execute(sql, [langCode] + params)
-            matches = cursor.fetchall()
+            where_clause = " AND ".join(like_conditions)
+            sql = f"select hash, content from textMap where lang=? and ({where_clause}) limit 2000"
+            cursor.execute(sql, [langCode] + like_params)
+            candidates = cursor.fetchall()
+
+            # 在候选结果上用 Python re 做词边界过滤
+            word_patterns = []
+            for group in expanded_word_groups:
+                group_patterns = []
+                for form in group:
+                    group_patterns.append(re.compile(r'\b' + re.escape(form) + r'\b', re.IGNORECASE))
+                word_patterns.append(group_patterns)
+
+            matches = []
+            for row in candidates:
+                content = row[1]
+                if content is None:
+                    continue
+                if all(any(p.search(content) for p in group) for group in word_patterns):
+                    matches.append(row)
+
             return matches
 
     def selectTextMapFromTextHash(self, textHash, langs: list[int] = None):

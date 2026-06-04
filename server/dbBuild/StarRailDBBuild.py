@@ -108,8 +108,9 @@ def import_npcs(conn):
     sql = "INSERT OR IGNORE INTO npc(npcId, textHash) VALUES (?,?)"
     for npc in tqdm(npcs, total=len(npcs)):
         npc_id = npc.get("ID")
+        npc_name_hash = npc.get("DefaultNPCName", {}).get("Hash")
         if npc_id is not None:
-            cursor.execute(sql, (npc_id, None))
+            cursor.execute(sql, (npc_id, str(npc_name_hash) if npc_name_hash is not None else None))
     conn.commit()
     cursor.close()
 
@@ -184,6 +185,22 @@ def import_quest_talk(conn):
     quest_path = os.path.join(DATA_PATH, "ExcelOutput", "MainMission.json")
     quests = json.load(open(quest_path, "r", encoding="utf-8"))
     main_mission_ids = set(q.get("MainMissionID") for q in quests)
+
+    # Also load SubMission data to improve matching
+    sub_mission_path = os.path.join(DATA_PATH, "ExcelOutput", "SubMission.json")
+    sub_mission_ids = set()
+    sub_to_main = {}
+    if os.path.exists(sub_mission_path):
+        sub_missions = json.load(open(sub_mission_path, "r", encoding="utf-8"))
+        for sm in sub_missions:
+            sm_id = sm.get("SubMissionID")
+            if sm_id is not None:
+                sub_mission_ids.add(sm_id)
+                # Derive MainMissionID from SubMissionID (typically first 7 digits)
+                s = str(sm_id)
+                if len(s) >= 7:
+                    sub_to_main[sm_id] = int(s[:7])
+
     sql = "INSERT OR IGNORE INTO questTalk(questId, talkId) VALUES (?,?)"
     count = 0
     for entry in tqdm(dialogues, total=len(dialogues), desc="questTalk"):
@@ -194,15 +211,31 @@ def import_quest_talk(conn):
         candidates = [talk_id // 100]
         if len(s) >= 7:
             candidates.append(int(s[:6] + "01"))
+            # Also try first 7 digits directly (common SubMission → MainMission pattern)
+            candidates.append(int(s[:7]))
         if len(s) >= 5:
             candidates.append(int(s[:5] + "01"))
         if len(s) >= 4:
             candidates.append(int(s[:4] + "01"))
+        # Try more prefix lengths for better coverage
+        if len(s) >= 8:
+            candidates.append(int(s[:8] + "01"))
+            candidates.append(talk_id // 10000 * 100 + 1)
+        if len(s) >= 6:
+            candidates.append(int(s[:6] + "001"))
         matched = None
         for c in candidates:
             if c in main_mission_ids:
                 matched = c
                 break
+        # If not matched to MainMission directly, try via SubMission
+        if matched is None:
+            for c in candidates:
+                if c in sub_mission_ids:
+                    main_id = sub_to_main.get(c)
+                    if main_id and main_id in main_mission_ids:
+                        matched = main_id
+                        break
         if matched is not None:
             cursor.execute(sql, (matched, talk_id))
             count += 1

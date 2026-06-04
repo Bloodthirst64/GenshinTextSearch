@@ -1,8 +1,7 @@
 import io
 
 import databaseHelper
-import languagePackReader
-import starrailLanguagePackReader
+import voicePackChecker
 import config
 import placeholderHandler
 import wordSearchHelper
@@ -64,26 +63,10 @@ def queryTextHashInfo(textHash, langs: 'list[int]', sourceLangCode: int, queryOr
 
     voicePath = selectVoicePathFromTextHash(textHash, game, db)
     if voicePath is not None:
-        if game == "genshin":
-            voiceExist = False
-            for lang in langs:
-                if lang in languagePackReader.langPackages and languagePackReader.checkAudioBin(voicePath, lang):
-                    voiceExist = True
-                    break
-            if voiceExist:
-                obj['voicePaths'].append(voicePath)
-        elif game == "starrail":
-            starrailLanguagePackReader.loadLangPackages()
-            if starrailLanguagePackReader.langPackages:
-                voiceExist = False
-                for lang in langs:
-                    if lang in starrailLanguagePackReader.langPackages and starrailLanguagePackReader.checkAudioBin(voicePath, lang):
-                        voiceExist = True
-                        break
-                if voiceExist:
-                    obj['voicePaths'].append(voicePath)
-            elif starrailLanguagePackReader._availableLangs:
-                obj['voicePaths'].append(voicePath)
+        checker = voicePackChecker.get_checker(game)
+        checker.ensure_loaded()
+        if checker.should_append_voice(voicePath, langs):
+            obj['voicePaths'].append(voicePath)
 
     return obj
 
@@ -109,7 +92,8 @@ def getTranslateObj(keyword: str, langCode: int, game="genshin", word_mode=False
     batchVoicePaths = db.batchSelectVoicePathFromTextHash(hashes)
 
     if game == "starrail":
-        starrailLanguagePackReader.loadLangPackages()
+        checker = voicePackChecker.get_checker(game)
+        checker.ensure_loaded()
         dialogueIds_for_talker = {}
         for h in hashes:
             vp = batchVoicePaths.get(h)
@@ -118,6 +102,20 @@ def getTranslateObj(keyword: str, langCode: int, game="genshin", word_mode=False
                 if charId:
                     displayName = databaseHelper.GameDB._charIdToDisplayName(charId)
                     dialogueIds_for_talker[h] = displayName if displayName else charId
+
+    # 崩铁语音路径到章节/区域的映射
+    _VOICE_PATH_CHAPTER_MAP = {
+        'chapter0': '空间站「黑塔」',
+        'chapter1': '雅利洛-VI',
+        'chapter2': '仙舟「罗浮」',
+        'chapter3': '匹诺康尼',
+        'chapter4': '翁瓦克',
+        'vo_hertaspacestation': '空间站「黑塔」',
+        'vo_belobog': '雅利洛-VI',
+        'vo_xianzhou': '仙舟「罗浮」',
+        'vo_penacony': '匹诺康尼',
+        'vo_amphoreus': '翁瓦克',
+    }
 
     ans = []
     isMale = config.getIsMale(game)
@@ -143,6 +141,14 @@ def getTranslateObj(keyword: str, langCode: int, game="genshin", word_mode=False
             obj['isTalk'] = True
             if game == "genshin" and ', ' in originInfo[0]:
                 obj['talker'] = originInfo[0].split(', ')[0]
+            # 崩铁：如果来源是"对话文本"，尝试从语音路径推断更好的来源
+            if game == "starrail" and originInfo[0] == "对话文本":
+                vp = batchVoicePaths.get(textHash)
+                if vp:
+                    for prefix, areaName in _VOICE_PATH_CHAPTER_MAP.items():
+                        if vp.startswith(prefix):
+                            obj['origin'] = areaName
+                            break
         else:
             fetterOrigin = batchFetterOrigins.get(textHash)
             if fetterOrigin is not None:
@@ -159,25 +165,9 @@ def getTranslateObj(keyword: str, langCode: int, game="genshin", word_mode=False
 
         voicePath = batchVoicePaths.get(textHash)
         if voicePath is not None:
-            if game == "genshin":
-                voiceExist = False
-                for lang in langs:
-                    if lang in languagePackReader.langPackages and languagePackReader.checkAudioBin(voicePath, lang):
-                        voiceExist = True
-                        break
-                if voiceExist:
-                    obj['voicePaths'].append(voicePath)
-            elif game == "starrail":
-                if starrailLanguagePackReader.langPackages:
-                    voiceExist = False
-                    for lang in langs:
-                        if lang in starrailLanguagePackReader.langPackages and starrailLanguagePackReader.checkAudioBin(voicePath, lang):
-                            voiceExist = True
-                            break
-                    if voiceExist:
-                        obj['voicePaths'].append(voicePath)
-                elif starrailLanguagePackReader._availableLangs:
-                    obj['voicePaths'].append(voicePath)
+            checker = voicePackChecker.get_checker(game)
+            if checker.should_append_voice(voicePath, langs):
+                obj['voicePaths'].append(voicePath)
 
         ans.append(obj)
 
@@ -234,31 +224,18 @@ def getTalkFromHash(textHash, game="genshin"):
 
 
 def getVoiceBinStream(voicePath, langCode, game="genshin"):
-    if game == "starrail":
-        starrailLanguagePackReader.loadLangPackages()
-        wemBin = starrailLanguagePackReader.getAudioBin(voicePath, langCode)
-    else:
-        wemBin = languagePackReader.getAudioBin(voicePath, langCode)
+    checker = voicePackChecker.get_checker(game)
+    checker.ensure_loaded()
+    wemBin = checker.get_audio_bin(voicePath, langCode)
     if wemBin is None:
         return None
     return io.BytesIO(wemBin)
 
 
 def getLoadedVoicePacks(game="genshin"):
-    ans = {}
-    if game == "starrail":
-        starrailLanguagePackReader.loadLangPackages()
-        if starrailLanguagePackReader.langPackages:
-            for packId in starrailLanguagePackReader.langPackages:
-                ans[packId] = starrailLanguagePackReader.langCodes[packId]
-        else:
-            for code in starrailLanguagePackReader._availableLangs:
-                ans[code] = starrailLanguagePackReader.langCodes[code]
-    else:
-        for packId in languagePackReader.langPackages:
-            ans[packId] = languagePackReader.langCodes[packId]
-
-    return ans
+    checker = voicePackChecker.get_checker(game)
+    checker.ensure_loaded()
+    return checker.get_loaded_voice_packs()
 
 
 def getImportedTextMapLangs(game="genshin"):
