@@ -2,6 +2,9 @@ import sqlite3
 from contextlib import closing
 import os
 import re
+from logger import get_logger
+
+log = get_logger("database")
 
 _VOICE_PATH_CHAR_MAP = {
     'player': '开拓者',
@@ -209,7 +212,9 @@ class GameDB:
         self._wanderNames = {}
         self._travellerNames = {}
         self._game = game
+        self._searchBackend = None
         self.conn.create_function("REGEXP", 2, self._regexp)
+        self._detectSearchBackend()
 
     @staticmethod
     def _regexp(pattern, string):
@@ -217,20 +222,72 @@ class GameDB:
             return 0
         return 1 if re.search(pattern, string, re.IGNORECASE) else 0
 
-    def selectTextMapFromKeyword(self, keyWord: str, langCode: int):
-        with closing(self.conn.cursor()) as cursor:
-            sql1 = "select hash, content from textMap where lang=? and content like ? limit 200"
-            cursor.execute(sql1, (langCode, '%{}%'.format(keyWord)))
-            matches = cursor.fetchall()
-            return matches
+    def _detectSearchBackend(self):
+        try:
+            self.conn.execute("CREATE VIRTUAL TABLE temp._fts_trigram_test USING fts5(content, tokenize='trigram')")
+            self.conn.execute("DROP TABLE temp._fts_trigram_test")
+            exists = self.conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='textMapFts'").fetchone()
+            self._searchBackend = "fts_trigram" if exists is not None else "like"
+        except sqlite3.Error:
+            self._searchBackend = "like"
+        log.info(f"game={self._game} searchBackend={self._searchBackend}")
 
-    def selectTextMapFromKeywordWordMode(self, expanded_word_groups, langCode):
+    @staticmethod
+    def _escapeFtsPhrase(text: str):
+        return '"' + text.replace('"', '""') + '"'
+
+    def _selectTextMapFromKeywordLike(self, keyWord: str, langCode: int, limit: int):
         with closing(self.conn.cursor()) as cursor:
-            # 先用 LIKE 快速缩小候选范围（利用 SQLite 的 LIKE 优化），
-            # 再用 Python re 做精确的词边界匹配，避免全表 REGEXP 扫描
+            sql1 = f"select hash, content from textMap where lang=? and content like ? limit {limit}"
+            cursor.execute(sql1, (langCode, '%{}%'.format(keyWord)))
+            return cursor.fetchall()
+
+    def _selectTextMapFromKeywordFts(self, keyWord: str, langCode: int, limit: int):
+        with closing(self.conn.cursor()) as cursor:
+            sql = f"""select t.hash, t.content
+                      from textMapFts f join textMap t on t.id = f.rowid
+                      where textMapFts match ? and t.lang = ? and t.content like ?
+                      limit {limit}"""
+            cursor.execute(sql, (self._escapeFtsPhrase(keyWord), langCode, '%{}%'.format(keyWord)))
+            return cursor.fetchall()
+
+    def selectTextMapFromKeyword(self, keyWord: str, langCode: int):
+        keyWord = keyWord.strip()
+        if keyWord == "":
+            return []
+        if self._searchBackend == "fts_trigram" and len(keyWord) >= 3:
+            try:
+                return self._selectTextMapFromKeywordFts(keyWord, langCode, 200)
+            except sqlite3.Error as e:
+                log.warning(f"FTS search failed, fallback to LIKE: game={self._game} keyword={keyWord} error={e}")
+        return self._selectTextMapFromKeywordLike(keyWord, langCode, 200)
+
+    def _buildWordModePatterns(self, expanded_word_groups):
+        word_patterns = []
+        normalized_groups = []
+        for group in expanded_word_groups:
+            forms = sorted(set(form.lower() for form in group if form))
+            if not forms:
+                continue
+            normalized_groups.append(forms)
+            word_patterns.append([re.compile(r'\b' + re.escape(form) + r'\b', re.IGNORECASE) for form in forms])
+        return normalized_groups, word_patterns
+
+    def _filterWordModeCandidates(self, candidates, word_patterns):
+        matches = []
+        for row in candidates:
+            content = row[1]
+            if content is None:
+                continue
+            if all(any(p.search(content) for p in group) for group in word_patterns):
+                matches.append(row)
+        return matches
+
+    def _selectTextMapFromKeywordWordModeLike(self, normalized_groups, langCode):
+        with closing(self.conn.cursor()) as cursor:
             like_conditions = []
             like_params = []
-            for group in expanded_word_groups:
+            for group in normalized_groups:
                 group_conditions = []
                 for form in group:
                     group_conditions.append("content LIKE ?")
@@ -240,25 +297,36 @@ class GameDB:
             where_clause = " AND ".join(like_conditions)
             sql = f"select hash, content from textMap where lang=? and ({where_clause}) limit 2000"
             cursor.execute(sql, [langCode] + like_params)
-            candidates = cursor.fetchall()
+            return cursor.fetchall()
 
-            # 在候选结果上用 Python re 做词边界过滤
-            word_patterns = []
-            for group in expanded_word_groups:
-                group_patterns = []
-                for form in group:
-                    group_patterns.append(re.compile(r'\b' + re.escape(form) + r'\b', re.IGNORECASE))
-                word_patterns.append(group_patterns)
+    def _selectTextMapFromKeywordWordModeFts(self, normalized_groups, langCode):
+        with closing(self.conn.cursor()) as cursor:
+            group_queries = []
+            for group in normalized_groups:
+                group_queries.append("(" + " OR ".join(self._escapeFtsPhrase(form) for form in group if len(form) >= 3) + ")")
+            if not group_queries or any(query == "()" for query in group_queries):
+                return self._selectTextMapFromKeywordWordModeLike(normalized_groups, langCode)
+            match_query = " AND ".join(group_queries)
+            sql = """select t.hash, t.content
+                     from textMapFts f join textMap t on t.id = f.rowid
+                     where textMapFts match ? and t.lang = ?
+                     limit 2000"""
+            cursor.execute(sql, (match_query, langCode))
+            return cursor.fetchall()
 
-            matches = []
-            for row in candidates:
-                content = row[1]
-                if content is None:
-                    continue
-                if all(any(p.search(content) for p in group) for group in word_patterns):
-                    matches.append(row)
-
-            return matches
+    def selectTextMapFromKeywordWordMode(self, expanded_word_groups, langCode):
+        normalized_groups, word_patterns = self._buildWordModePatterns(expanded_word_groups)
+        if not normalized_groups:
+            return []
+        if self._searchBackend == "fts_trigram":
+            try:
+                candidates = self._selectTextMapFromKeywordWordModeFts(normalized_groups, langCode)
+            except sqlite3.Error as e:
+                log.warning(f"FTS word search failed, fallback to LIKE: game={self._game} error={e}")
+                candidates = self._selectTextMapFromKeywordWordModeLike(normalized_groups, langCode)
+        else:
+            candidates = self._selectTextMapFromKeywordWordModeLike(normalized_groups, langCode)
+        return self._filterWordModeCandidates(candidates, word_patterns)
 
     def selectTextMapFromTextHash(self, textHash, langs: list[int] = None):
         with closing(self.conn.cursor()) as cursor:
@@ -383,32 +451,60 @@ class GameDB:
     def _charIdToDisplayName(charId: str) -> str:
         if not charId:
             return None
-        return _VOICE_PATH_CHAR_MAP.get(charId)
+        return _VOICE_PATH_CHAR_MAP.get(charId) or _VOICE_PATH_CHAR_MAP.get(charId.lower())
+
+    def _resolveTalkerName(self, talkerNameHash, voicePath, langCode: int = 1, batchTalkerNames: dict | None = None) -> 'str | None':
+        if talkerNameHash is not None:
+            if batchTalkerNames is not None:
+                talkerName = batchTalkerNames.get(str(talkerNameHash))
+                if talkerName:
+                    return talkerName
+            else:
+                talkerNames = self.selectTextMapFromTextHash(str(talkerNameHash), [langCode])
+                if len(talkerNames) > 0 and talkerNames[0][0]:
+                    return talkerNames[0][0]
+        charId = self._extractCharIdFromVoicePath(voicePath)
+        displayName = self._charIdToDisplayName(charId)
+        if displayName:
+            return displayName
+        return charId
 
     def getTalkerNameFromVoice(self, dialogueId, langCode: int = 1) -> 'str | None':
         with closing(self.conn.cursor()) as cursor:
-            cursor.execute('SELECT voicePath FROM voice WHERE dialogueId=?', (dialogueId,))
+            cursor.execute('SELECT d.talkerNameHash, v.voicePath FROM dialogue d LEFT JOIN voice v ON v.dialogueId=d.dialogueId WHERE d.dialogueId=?', (dialogueId,))
             row = cursor.fetchone()
-            if row is None or row[0] is None:
+            if row is None:
                 return None
-            charId = self._extractCharIdFromVoicePath(row[0])
-            displayName = self._charIdToDisplayName(charId)
-            if displayName:
-                return displayName
-            return charId
+            talkerNameHash, voicePath = row
+            return self._resolveTalkerName(talkerNameHash, voicePath, langCode)
 
-    def batchGetTalkerNameFromVoice(self, dialogueIds: list) -> dict:
+    def batchGetTalkerNameFromVoice(self, dialogueIds: list, langCode: int = 1) -> dict:
         if not dialogueIds:
             return {}
         with closing(self.conn.cursor()) as cursor:
             placeholders = ','.join(['?'] * len(dialogueIds))
-            cursor.execute(f'SELECT dialogueId, voicePath FROM voice WHERE dialogueId IN ({placeholders})', dialogueIds)
+            cursor.execute(
+                f'SELECT d.dialogueId, d.talkerNameHash, v.voicePath FROM dialogue d LEFT JOIN voice v ON v.dialogueId = d.dialogueId WHERE d.dialogueId IN ({placeholders})',
+                dialogueIds,
+            )
+            rows = cursor.fetchall()
+            talkerNameHashes = [str(row[1]) for row in rows if row[1] is not None]
+            batchTalkerNames = {}
+            if talkerNameHashes:
+                langStr = str(langCode)
+                hashPlaceholders = ','.join(['?'] * len(talkerNameHashes))
+                cursor.execute(
+                    f'SELECT hash, content FROM textMap WHERE hash IN ({hashPlaceholders}) AND lang = {langStr}',
+                    talkerNameHashes,
+                )
+                for talkerHash, content in cursor.fetchall():
+                    batchTalkerNames[str(talkerHash)] = content
             result = {}
-            for row in cursor.fetchall():
-                dialogueId, voicePath = row
-                charId = self._extractCharIdFromVoicePath(voicePath)
-                displayName = self._charIdToDisplayName(charId)
-                result[dialogueId] = displayName if displayName else charId
+            for row in rows:
+                dialogueId, talkerNameHash, voicePath = row
+                talkerName = self._resolveTalkerName(talkerNameHash, voicePath, langCode, batchTalkerNames)
+                if talkerName is not None:
+                    result[dialogueId] = talkerName
             return result
 
     def getTalkQuestId(self, talkId: int) -> int | None:
@@ -418,6 +514,12 @@ class GameDB:
             cursor.execute(sql2, (talkId,))
             ans2 = cursor.fetchall()
             if len(ans2) == 0:
+                if self._game == "starrail":
+                    derivedQuestId = talkId // 100
+                    cursor.execute('select questId from quest where questId=?', (derivedQuestId,))
+                    derived = cursor.fetchone()
+                    if derived is not None:
+                        return derived[0]
                 return None
             return ans2[0][0]
 
@@ -505,16 +607,24 @@ class GameDB:
                 cursor.execute('SELECT questId FROM questTalk WHERE talkId=?', (talkId,))
                 questRow = cursor.fetchone()
                 if questRow is None:
-                    return None
-                questId = questRow[0]
-                cursor.execute('SELECT talkId FROM questTalk WHERE questId=?', (questId,))
-                talkIds = [r[0] for r in cursor.fetchall()]
-                if not talkIds:
-                    return None
-                placeholders = ','.join(['?'] * len(talkIds))
-                sql1 = f'select textHash, talkerType, talkerId, dialogueId from dialogue where talkId in ({placeholders})'
-                cursor.execute(sql1, talkIds)
-                ans = cursor.fetchall()
+                    talkGroupId = talkId // 100
+                    sql1 = 'select textHash, talkerType, talkerId, dialogueId from dialogue where talkId between ? and ? order by talkId'
+                    cursor.execute(sql1, (talkGroupId * 100, talkGroupId * 100 + 99))
+                    ans = cursor.fetchall()
+                else:
+                    questId = questRow[0]
+                    cursor.execute('SELECT talkId FROM questTalk WHERE questId=?', (questId,))
+                    talkIds = [r[0] for r in cursor.fetchall()]
+                    if not talkIds:
+                        talkGroupId = talkId // 100
+                        sql1 = 'select textHash, talkerType, talkerId, dialogueId from dialogue where talkId between ? and ? order by talkId'
+                        cursor.execute(sql1, (talkGroupId * 100, talkGroupId * 100 + 99))
+                        ans = cursor.fetchall()
+                    else:
+                        placeholders = ','.join(['?'] * len(talkIds))
+                        sql1 = f'select textHash, talkerType, talkerId, dialogueId from dialogue where talkId in ({placeholders}) order by talkId'
+                        cursor.execute(sql1, talkIds)
+                        ans = cursor.fetchall()
             elif coopQuestId is None:
                 sql1 = 'select textHash, talkerType, talkerId, dialogueId from dialogue where talkId = ? and coopQuestId is null'
                 cursor.execute(sql1, (talkId,))
@@ -552,10 +662,17 @@ class GameDB:
             return {}
         with closing(self.conn.cursor()) as cursor:
             placeholders = ','.join(['?'] * len(textHashes))
-            sql = f"""select d.textHash, d.talkerType, d.talkerId, d.talkId, d.coopQuestId
-                      from dialogue d where d.textHash in ({placeholders})"""
-            cursor.execute(sql, textHashes)
-            dialogueRows = cursor.fetchall()
+            talkerNameHashes = set()
+            if self._game == "starrail":
+                sql = f"""select d.textHash, d.talkerType, d.talkerId, d.talkId, d.coopQuestId, d.talkerNameHash, v.voicePath
+                          from dialogue d left join voice v on v.dialogueId = d.dialogueId where d.textHash in ({placeholders})"""
+                cursor.execute(sql, textHashes)
+                dialogueRows = cursor.fetchall()
+            else:
+                sql = f"""select d.textHash, d.talkerType, d.talkerId, d.talkId, d.coopQuestId, null as talkerNameHash, null as voicePath
+                          from dialogue d where d.textHash in ({placeholders})"""
+                cursor.execute(sql, textHashes)
+                dialogueRows = cursor.fetchall()
 
             talkIds = set()
             npcIds = set()
@@ -563,6 +680,8 @@ class GameDB:
                 talkIds.add(row[3])
                 if row[1] == "TALK_ROLE_NPC":
                     npcIds.add(row[2])
+                if row[5] is not None:
+                    talkerNameHashes.add(str(row[5]))
 
             talkToQuest = {}
             if talkIds:
@@ -580,6 +699,14 @@ class GameDB:
                 cursor.execute(sql3, list(npcIds) + [langCode])
                 for r in cursor.fetchall():
                     npcNames[r[0]] = r[1]
+
+            talkerNamesByHash = {}
+            if talkerNameHashes:
+                talkerPlaceholders = ','.join(['?'] * len(talkerNameHashes))
+                sqlTalker = f"select hash, content from textMap where hash in ({talkerPlaceholders}) and lang = ?"
+                cursor.execute(sqlTalker, list(talkerNameHashes) + [langCode])
+                for r in cursor.fetchall():
+                    talkerNamesByHash[str(r[0])] = r[1]
 
             questIds = set(talkToQuest.values())
             questNames = {}
@@ -619,9 +746,13 @@ class GameDB:
                 talkerId = row[2]
                 talkId = row[3]
                 coopQuestId = row[4]
+                talkerNameHash = row[5]
+                voicePath = row[6]
 
                 talkerName = None
-                if talkerType == "TALK_ROLE_NPC":
+                if self._game == "starrail":
+                    talkerName = self._resolveTalkerName(talkerNameHash, voicePath, langCode, talkerNamesByHash)
+                elif talkerType == "TALK_ROLE_NPC":
                     talkerName = npcNames.get(talkerId)
                 elif talkerType == "TALK_ROLE_PLAYER":
                     talkerName = "主角"

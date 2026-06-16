@@ -36,10 +36,18 @@
             {{ searchSummary }}
         </span>
 
-
-        <div>
-            <TranslateDisplay v-for="translate in queryResult" :translate-obj="translate" class="translate" @onVoicePlay="onVoicePlay" :keyword="keywordLast" />
-        </div>
+        <el-tabs v-model="activeResultTab" class="resultTabs">
+            <el-tab-pane :label="`文本结果 (${queryResult.length})`" name="text">
+                <p v-if="textSearchSummary" class="tabSummary">{{ textSearchSummary }}</p>
+                <div>
+                    <TranslateDisplay v-for="translate in queryResult" :key="`${translate.game}:${translate.hash}`" :translate-obj="translate" class="translate" @onVoicePlay="onVoicePlay" :keyword="keywordLast" />
+                </div>
+            </el-tab-pane>
+            <el-tab-pane :label="`歌词结果 (${lyricsResult.length})`" name="lyrics">
+                <p v-if="lyricsSearchSummary" class="tabSummary">{{ lyricsSearchSummary }}</p>
+                <LyricsResultList :songs="lyricsResult" :keyword="keywordLast" :searched="lyricsSearched" />
+            </el-tab-pane>
+        </el-tabs>
     </div>
 
     <div class="viewWrapper voicePlayerContainer" v-show="showPlayer && queryResult.length > 0">
@@ -70,16 +78,25 @@
 
 <script setup>
 import {onBeforeMount, ref, watch} from 'vue';
+import {useRoute} from 'vue-router';
 import {Close, Delete, Download, Plus, ZoomIn} from '@element-plus/icons-vue';
 import { Search } from '@element-plus/icons-vue'
 import global, {getStoredSearchLang, setStoredSearchLang} from "@/global/global"
-import api from "@/api/keywordQuery"
+import keywordApi from "@/api/keywordQuery"
+import lyricsApi from "@/api/lyricsQuery"
 import TranslateDisplay from "@/components/ResultEntry.vue";
+import LyricsResultList from "@/components/LyricsResultList.vue";
 import AudioPlayer from "@liripeng/vue-audio-player";
 
 const queryLanguages = [1,4]
+const route = useRoute()
 
 const queryResult = ref([])
+const lyricsResult = ref([])
+const lyricsSearched = ref(false)
+const activeResultTab = ref(route.query.tab === 'lyrics' ? 'lyrics' : 'text')
+const textSearchSummary = ref("")
+const lyricsSearchSummary = ref("")
 
 
 const getSearchLanguage = () => {
@@ -102,9 +119,14 @@ onBeforeMount(async ()=>{
 })
 
 watch(() => global.currentGame, async (newGames) => {
+    querySeq++
     selectedInputLanguage.value = getSearchLanguage()
     queryResult.value = []
+    lyricsResult.value = []
+    lyricsSearched.value = false
     searchSummary.value = ""
+    textSearchSummary.value = ""
+    lyricsSearchSummary.value = ""
 }, {deep: true})
 
 watch(() => global.languages, async (newLangs) => {
@@ -116,8 +138,53 @@ watch(selectedInputLanguage, (newLang) => {
     setStoredSearchLang(newLang)
 })
 
+watch(() => route.query.tab, (tab) => {
+    if(tab === 'lyrics' || tab === 'text') activeResultTab.value = tab
+})
+
 const onWordSearchChanged = (val) => {
     localStorage.setItem('wordSearchEnabled', val)
+}
+
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const hasExactWordMatch = (item, searchText) => {
+    if(!searchText.trim()) return false
+    let pattern = new RegExp(`\\b${escapeRegExp(searchText.trim())}\\b`, 'i')
+    return Object.values(item.translates).some(text => typeof text === 'string' && pattern.test(text))
+}
+
+const searchLyricsForGames = async (searchText, games) => {
+    let results = await Promise.allSettled(games.map(game =>
+        lyricsApi.searchLyrics(searchText, game).then(response => ({game, ans: response.json}))
+    ))
+    let allContents = []
+    let totalTime = 0
+    let failedCount = 0
+    for (let result of results) {
+        if(result.status !== 'fulfilled'){
+            failedCount++
+            continue
+        }
+        let {game, ans} = result.value
+        totalTime += ans.time
+        for(let song of ans.contents){
+            song.game = song.game || game
+            allContents.push(song)
+        }
+    }
+
+    let songMap = new Map()
+    for(let song of allContents){
+        let key = `${song.game}:${song.title}:${song.album || ''}`
+        if(!songMap.has(key)) songMap.set(key, song)
+    }
+
+    return {
+        contents: Array.from(songMap.values()),
+        time: totalTime,
+        failedCount
+    }
 }
 
 /**
@@ -127,11 +194,27 @@ const onWordSearchChanged = (val) => {
 const voicePlayer = ref()
 const showPlayer = ref(false)
 let firstShowPlayer = true
+let querySeq = 0
 
 const onQueryButtonClicked = async () =>{
+    let searchText = keyword.value.trim()
+    if (!searchText) {
+        searchSummary.value = "请输入搜索关键词。"
+        textSearchSummary.value = ""
+        lyricsSearchSummary.value = ""
+        queryResult.value = []
+        lyricsResult.value = []
+        lyricsSearched.value = false
+        return
+    }
+
     if (global.currentGame.length === 0) {
         searchSummary.value = "请至少选择一个游戏。"
+        textSearchSummary.value = ""
+        lyricsSearchSummary.value = ""
         queryResult.value = []
+        lyricsResult.value = []
+        lyricsSearched.value = false
         return
     }
 
@@ -139,99 +222,90 @@ const onQueryButtonClicked = async () =>{
         voicePlayer.value.pause()
     } catch(e) {}
 
+    let currentSeq = ++querySeq
+    let games = [...global.currentGame]
+    let gameNames = global.availableGames
+
+    let textSearchPromise = Promise.allSettled(games.map(game =>
+        keywordApi.queryByKeyword(searchText, selectedInputLanguage.value, game, wordSearchEnabled.value)
+            .then(response => ({game, ans: response.json}))
+    ))
+    let lyricsSearchPromise = searchLyricsForGames(searchText, games)
+
+    let [textSearchResult, lyricsSearchResult] = await Promise.allSettled([textSearchPromise, lyricsSearchPromise])
+    if(currentSeq !== querySeq) return
+
     let allContents = []
     let totalTime = 0
-    let gameNames = {
-        "genshin": "原神",
-        "starrail": "崩坏：星穹铁道"
-    }
-
-    for (let game of global.currentGame) {
-        let ans = (await api.queryByKeyword(keyword.value, selectedInputLanguage.value, game, wordSearchEnabled.value)).json
-        totalTime += ans.time
-        for (let item of ans.contents) {
-            item.game = game
-            item.gameName = gameNames[game] || game
-            allContents.push(item)
+    if(textSearchResult.status === 'fulfilled'){
+        for (let result of textSearchResult.value) {
+            if(result.status !== 'fulfilled') continue
+            let {game, ans} = result.value
+            totalTime += ans.time
+            for (let item of ans.contents) {
+                item.game = game
+                item.gameName = gameNames[game] || game
+                allContents.push(item)
+            }
         }
-    }
-
-    let searchSummaryTmp = `查询用时: ${totalTime.toFixed(2)}ms，`
-    if(allContents.length > 0){
-        if(allContents.length >= 200){
-            searchSummaryTmp += `共 ≥200 条结果`
-        }else{
-            searchSummaryTmp += `共 ${allContents.length} 条结果`
-        }
-
-    }else{
-        searchSummaryTmp += `没有找到结果。`
-        searchSummary.value = searchSummaryTmp
-        queryResult.value = []
-        return
     }
 
     let mergedCount = 0
     let resultMap = new Map()
     for(let item of allContents){
-        let key = item.translates[queryLanguages[0]] + "|" + item.game
+        let key = item.hash + "|" + item.game
         if(!resultMap.has(key)){
             resultMap.set(key, item)
             continue
         }
-        mergedCount++;
-
+        mergedCount++
         let oldItem = resultMap.get(key)
-        let voicePathsToAdd = []
-        for(let newVoicePath of item.voicePaths){
-            let found = false
-            for(let oldVoicePath of oldItem.voicePaths){
-                if(oldVoicePath === newVoicePath){
-                    found = false
-                    break
-                }
-            }
-            if(!found){
-                voicePathsToAdd.push(newVoicePath)
-            }
-        }
-        if(voicePathsToAdd.length > 0){
-            oldItem.voicePaths.push(...voicePathsToAdd)
-
-        }
+        oldItem.voicePaths = [...new Set([...(oldItem.voicePaths || []), ...(item.voicePaths || [])])]
     }
-    queryResult.value.length = 0
-    let noVoiceEntries = []
 
     let allEntries = []
     resultMap.forEach((item, key, _)=>{
+        item._exactWordMatch = wordSearchEnabled.value && selectedInputLanguage.value === '4' && hasExactWordMatch(item, searchText) ? 1 : 0
+        item._hasVoice = item.voicePaths.length > 0 ? 1 : 0
         allEntries.push(item)
     })
 
     allEntries.sort((a, b) => {
-        let aHasVoice = a.voicePaths.length > 0 ? 1 : 0
-        let bHasVoice = b.voicePaths.length > 0 ? 1 : 0
-        if (aHasVoice !== bHasVoice) return bHasVoice - aHasVoice
+        if (a._exactWordMatch !== b._exactWordMatch) return b._exactWordMatch - a._exactWordMatch
+        if (a._hasVoice !== b._hasVoice) return b._hasVoice - a._hasVoice
         return 0
     })
 
-    for (let item of allEntries) {
-        if(item.voicePaths.length > 0){
-            queryResult.value.push(item)
-        }else{
-            noVoiceEntries.push(item)
-        }
-    }
+    queryResult.value = allEntries
 
-    queryResult.value.push(...noVoiceEntries)
-    keywordLast.value = keyword.value
-
-    if(mergedCount > 0){
-        searchSummaryTmp += `，已合并 ${mergedCount} 条重复结果。`
+    let textSummary = `文本查询用时: ${totalTime.toFixed(2)}ms，`
+    if(queryResult.value.length > 0){
+        textSummary += allContents.length >= 200 ? `共 ≥200 条结果` : `共 ${queryResult.value.length} 条结果`
+        if(mergedCount > 0) textSummary += `，已合并 ${mergedCount} 条重复结果。`
+        else textSummary += '。'
     }else{
-        searchSummaryTmp += '。'
+        textSummary += `没有找到结果。`
     }
-    searchSummary.value = searchSummaryTmp
+    textSearchSummary.value = textSummary
+
+    if(lyricsSearchResult.status === 'fulfilled'){
+        lyricsResult.value = lyricsSearchResult.value.contents
+        lyricsSearched.value = true
+        let lyricsSummary = `歌词查询用时: ${lyricsSearchResult.value.time.toFixed(2)}ms，`
+        lyricsSummary += lyricsResult.value.length > 0 ? `共 ${lyricsResult.value.length} 首歌曲。` : `没有找到结果。`
+        if(lyricsSearchResult.value.failedCount > 0) lyricsSummary += ` 部分游戏歌词查询失败。`
+        lyricsSearchSummary.value = lyricsSummary
+    }else{
+        lyricsResult.value = []
+        lyricsSearched.value = true
+        lyricsSearchSummary.value = "歌词查询失败。"
+    }
+
+    keywordLast.value = searchText
+    searchSummary.value = `文本 ${queryResult.value.length} 条，歌词 ${lyricsResult.value.length} 首。`
+    if(queryResult.value.length === 0 && lyricsResult.value.length > 0){
+        activeResultTab.value = 'lyrics'
+    }
 }
 
 // 播放器相关开始
@@ -348,6 +422,16 @@ const onVoicePlay = (voiceUrl) => {
     margin-left: 10px;
     color: var(--el-input-text-color, var(--el-text-color-regular));
     font-size: 14px;
+}
+
+.resultTabs {
+    margin-top: 20px;
+}
+
+.tabSummary {
+    color: var(--el-text-color-regular);
+    font-size: 14px;
+    margin: 0 0 10px 0;
 }
 
 </style>

@@ -44,6 +44,9 @@ create index dialogue_dialogueId_index
 create index dialogue_textHash_index
     on dialogue (textHash);
 
+create index dialogue_talkId_coopQuestId_index
+    on dialogue (talkId, coopQuestId);
+
 create table fetters
 (
     id                       integer
@@ -99,6 +102,9 @@ create table questTalk
 create index questTalk_talkId_index
     on questTalk (talkId);
 
+create index questTalk_questId_index
+    on questTalk (questId);
+
 create table textMap
 (
     id      integer
@@ -116,6 +122,15 @@ create index textMap_hash_index
 
 create index textMap_lang_index
     on textMap (lang);
+
+create virtual table textMapFts using fts5(
+    hash UNINDEXED,
+    lang UNINDEXED,
+    content,
+    content='textMap',
+    content_rowid='id',
+    tokenize='trigram'
+);
 
 create table voice
 (

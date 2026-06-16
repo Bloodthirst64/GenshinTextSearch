@@ -25,21 +25,25 @@ create index chapter_chapterId_index
 
 create table dialogue
 (
-    id         integer
+    id             integer
         constraint dialogue_pk
             primary key autoincrement,
-    talkerType TEXT,
-    talkerId   integer,
-    talkId     integer,
-    textHash   text,
-    dialogueId integer
+    talkerType     TEXT,
+    talkerId       integer,
+    talkId         integer,
+    textHash       text,
+    talkerNameHash text,
+    dialogueId     integer
         constraint dialogue_pk_2
             unique,
-    coopQuestId integer
+    coopQuestId    integer
 );
 
 create index dialogue_textHash_index
     on dialogue (textHash);
+
+create index dialogue_talkId_coopQuestId_index
+    on dialogue (talkId, coopQuestId);
 
 create table fetters
 (
@@ -96,6 +100,9 @@ create table questTalk
 create index questTalk_talkId_index
     on questTalk (talkId);
 
+create index questTalk_questId_index
+    on questTalk (questId);
+
 create table textMap
 (
     id      integer
@@ -113,6 +120,15 @@ create index textMap_hash_index
 
 create index textMap_lang_index
     on textMap (lang);
+
+create virtual table textMapFts using fts5(
+    hash UNINDEXED,
+    lang UNINDEXED,
+    content,
+    content='textMap',
+    content_rowid='id',
+    tokenize='trigram'
+);
 
 create table voice
 (

@@ -2,6 +2,7 @@ import os
 from tqdm import tqdm
 import json
 from DBConfig import conn, LANG_PATH
+from searchIndex import rebuild_search_index
 
 
 def importTextMap(mapName: str):
@@ -38,6 +39,8 @@ def importTextMap(mapName: str):
 
     cursor.close()
     conn.commit()
+    backend, elapsed_ms = rebuild_search_index(conn)
+    print(f"Search index backend={backend}, elapsed={elapsed_ms:.2f}ms")
 
 
 def importAllTextMap():

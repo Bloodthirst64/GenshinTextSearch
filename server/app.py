@@ -105,8 +105,9 @@ def getTalkFromHash():
         start = time.time()
         contents = controllers.getTalkFromHash(textHash, game)
         end = time.time()
-        log.info(f"success: talkQuestName={contents.get('talkQuestName')}, dialogues={len(contents.get('dialogues', []))}")
-        for i, d in enumerate(contents.get('dialogues', [])[:3]):
+        dialogues = contents.get('dialogues') or []
+        log.info(f"success: talkQuestName={contents.get('talkQuestName')}, dialogues={len(dialogues)}")
+        for i, d in enumerate(dialogues[:3]):
             log.debug(f"  [{i}] talker={d.get('talker')} translates_keys={list(d.get('translates', {}).keys())} voicePaths={d.get('voicePaths')}")
     except controllers.TalkNotFoundError as e:
         log.warning(f"not found: textHash={textHash} game={game} error={e}")

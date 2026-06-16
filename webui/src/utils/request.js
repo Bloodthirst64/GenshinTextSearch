@@ -70,7 +70,6 @@ service.interceptors.response.use(function (response) {
     if(error.network === false){
         return Promise.reject(error);
     }
-    loadingScreen.endLoading();
     switch(error.response.status){
         case 415:
             ElMessage.error("接口未实现或请求方法设置错误")

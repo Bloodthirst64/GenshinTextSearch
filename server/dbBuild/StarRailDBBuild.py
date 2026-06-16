@@ -2,9 +2,10 @@ import os
 import json
 import sqlite3
 from tqdm import tqdm
+from searchIndex import rebuild_search_index
 
 DATA_PATH = os.path.join(os.path.dirname(__file__), "starrail-data")
-DB_PATH = os.path.join(os.path.dirname(__file__), "starrail-data.db")
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "starrail-data.db")
 
 LANG_MAP = [
     (1, "TextMapCHS.json", "简体中文"),
@@ -119,13 +120,22 @@ def import_dialogue(conn):
     cursor = conn.cursor()
     file_path = os.path.join(DATA_PATH, "ExcelOutput", "TalkSentenceConfig.json")
     dialogues = json.load(open(file_path, "r", encoding="utf-8"))
-    sql = "INSERT OR IGNORE INTO dialogue(talkId, textHash, dialogueId) VALUES (?,?,?)"
+    sql = "INSERT OR IGNORE INTO dialogue(talkId, textHash, talkerNameHash, dialogueId) VALUES (?,?,?,?)"
     for entry in tqdm(dialogues, total=len(dialogues)):
         talk_id = entry.get("TalkSentenceID")
         text_hash = entry.get("TalkSentenceText", {}).get("Hash")
+        talker_name_hash = entry.get("TextmapTalkSentenceName", {}).get("Hash")
         voice_id = entry.get("VoiceID")
         if talk_id is not None and text_hash is not None:
-            cursor.execute(sql, (talk_id, str(text_hash), voice_id))
+            cursor.execute(
+                sql,
+                (
+                    talk_id,
+                    str(text_hash),
+                    str(talker_name_hash) if talker_name_hash is not None else None,
+                    voice_id,
+                ),
+            )
     conn.commit()
     cursor.close()
 
@@ -302,6 +312,9 @@ def main():
     import_voice(conn)
     print("Importing chapters...")
     import_chapters(conn)
+    print("Building search index...")
+    backend, elapsed_ms = rebuild_search_index(conn)
+    print(f"Search index backend={backend}, elapsed={elapsed_ms:.2f}ms")
     print("Done!")
     conn.close()
 

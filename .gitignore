@@ -10,4 +10,7 @@ server/dbBuild/langs/
 *.pkl
 logs/
 .trae/
+.claude/
 server/tools/scraped_ids.json
+server/lyrics_data.json
+LyricsScraper/scraped_ids.json

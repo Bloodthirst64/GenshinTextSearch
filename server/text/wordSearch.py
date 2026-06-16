@@ -1,7 +1,9 @@
 import re
+from functools import lru_cache
 from lemminflect import getLemma, getAllInflections
 
 
+@lru_cache(maxsize=1024)
 def expand_word_forms(word):
     forms = set()
     forms.add(word.lower())
@@ -20,12 +22,17 @@ def expand_word_forms(word):
     return list(forms)
 
 
-def expand_query_words(query):
+@lru_cache(maxsize=512)
+def _expand_query_words_cached(query):
     words = query.strip().split()
     result = []
     for word in words:
-        forms = expand_word_forms(word)
+        forms = expand_word_forms(word.lower())
         if len(forms) == 1 and forms[0] == word.lower():
             pass
-        result.append(forms)
-    return result
+        result.append(tuple(forms))
+    return tuple(result)
+
+
+def expand_query_words(query):
+    return [list(forms) for forms in _expand_query_words_cached(query.lower())]

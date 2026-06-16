@@ -25,8 +25,7 @@ const router = createRouter({
                 },
                 {
                     path: "lyrics",
-                    name: "lyricsView",
-                    component: () => import("@/views/LyricsView.vue"),
+                    redirect: "/?tab=lyrics",
                 }
             ]
         },

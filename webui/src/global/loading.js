@@ -11,10 +11,12 @@ function startLoading(){
     //返回loadingCount
     loadingCount++;
     // _showLoading_DO_NOT_USE.value = true;
-    loadingService.value = ElLoading.service({
-        lock: true,
-        text: '请稍后'
-    })
+    if(loadingCount === 1){
+        loadingService.value = ElLoading.service({
+            lock: true,
+            text: '请稍后'
+        })
+    }
 
     return loadingCount;
 
@@ -30,10 +32,9 @@ function endLoading(){
     }
     if(loadingCount<=0){
         loadingCount = 0;
-        loadingService.value.close && loadingService.value.close()
+        loadingService.value?.close && loadingService.value.close()
+        loadingService.value = null
         // _showLoading_DO_NOT_USE.value = false
-    }else{
-        loadingCount--;
     }
     return loadingCount;
 }

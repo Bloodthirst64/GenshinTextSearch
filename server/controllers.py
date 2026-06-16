@@ -1,13 +1,28 @@
+import copy
 import io
+from functools import lru_cache
 
 import databaseHelper
 from voice.checker import get_checker
 import config
-from text.placeholder import replace as placeholderReplace
+from text.placeholder import process_translates as placeholderProcessTranslates
 from text.wordSearch import expand_query_words
 from logger import get_logger
 
 log = get_logger("controllers")
+
+_STARRAIL_VOICE_PATH_CHAPTER_MAP = {
+    'chapter0': '空间站「黑塔」',
+    'chapter1': '雅利洛-VI',
+    'chapter2': '仙舟「罗浮」',
+    'chapter3': '匹诺康尼',
+    'chapter4': '翁瓦克',
+    'vo_hertaspacestation': '空间站「黑塔」',
+    'vo_belobog': '雅利洛-VI',
+    'vo_xianzhou': '仙舟「罗浮」',
+    'vo_penacony': '匹诺康尼',
+    'vo_amphoreus': '翁瓦克',
+}
 
 
 class TalkNotFoundError(Exception):
@@ -47,14 +62,7 @@ def queryTextHashInfo(textHash, langs: 'list[int]', sourceLangCode: int, queryOr
         db = databaseHelper.get_db(game)
     obj = {'translates': {}, 'voicePaths': [], 'hash': str(textHash)}
     translates = db.selectTextMapFromTextHash(textHash, langs)
-    for translate in translates:
-        content = translate[0]
-        if content.startswith("#"):
-            obj['translates'][translate[1]] = (placeholderReplace(content, config.getIsMale(game), translate[1], game))[1:]
-        elif game == "starrail" and ("{M#" in content or "{F#" in content or "{NICKNAME}" in content):
-            obj['translates'][translate[1]] = placeholderReplace(content, config.getIsMale(game), translate[1], game)
-        else:
-            obj['translates'][translate[1]] = content
+    obj['translates'] = placeholderProcessTranslates(translates, config.getIsMale(game), game)
 
     if queryOrigin:
         origin, isTalk = selectVoiceOriginFromTextHash(textHash, sourceLangCode, game, db)
@@ -72,6 +80,25 @@ def queryTextHashInfo(textHash, langs: 'list[int]', sourceLangCode: int, queryOr
 
 
 def getTranslateObj(keyword: str, langCode: int, game="genshin", word_mode=False):
+    cache_key = _translate_cache_key(keyword, langCode, game, word_mode)
+    return copy.deepcopy(_getTranslateObjCached(*cache_key))
+
+
+def _translate_cache_key(keyword: str, langCode: int, game="genshin", word_mode=False):
+    return (
+        keyword,
+        int(langCode),
+        game,
+        bool(word_mode),
+        tuple(config.getResultLanguages(game)),
+        config.getSourceLanguage(game),
+        config.getIsMale(game),
+        config.getNickname(game),
+    )
+
+
+@lru_cache(maxsize=128)
+def _getTranslateObjCached(keyword: str, langCode: int, game: str, word_mode: bool, resultLangs, sourceLangCode, isMale, nickname):
     db = databaseHelper.get_db(game)
     if word_mode and langCode == 4:
         expanded = expand_query_words(keyword)
@@ -79,8 +106,7 @@ def getTranslateObj(keyword: str, langCode: int, game="genshin", word_mode=False
     else:
         contents = db.selectTextMapFromKeyword(keyword, langCode)
 
-    langs = config.getResultLanguages(game)
-    sourceLangCode = config.getSourceLanguage(game)
+    langs = list(resultLangs)
 
     hashes = [c[0] for c in contents]
 
@@ -91,49 +117,19 @@ def getTranslateObj(keyword: str, langCode: int, game="genshin", word_mode=False
     )
     batchVoicePaths = db.batchSelectVoicePathFromTextHash(hashes)
 
-    if game == "starrail":
+    checker = None
+    if batchVoicePaths:
         checker = get_checker(game)
         checker.ensure_loaded()
-        dialogueIds_for_talker = {}
-        for h in hashes:
-            vp = batchVoicePaths.get(h)
-            if vp is not None:
-                charId = databaseHelper.GameDB._extractCharIdFromVoicePath(vp)
-                if charId:
-                    displayName = databaseHelper.GameDB._charIdToDisplayName(charId)
-                    dialogueIds_for_talker[h] = displayName if displayName else charId
-
-    # 崩铁语音路径到章节/区域的映射
-    _VOICE_PATH_CHAPTER_MAP = {
-        'chapter0': '空间站「黑塔」',
-        'chapter1': '雅利洛-VI',
-        'chapter2': '仙舟「罗浮」',
-        'chapter3': '匹诺康尼',
-        'chapter4': '翁瓦克',
-        'vo_hertaspacestation': '空间站「黑塔」',
-        'vo_belobog': '雅利洛-VI',
-        'vo_xianzhou': '仙舟「罗浮」',
-        'vo_penacony': '匹诺康尼',
-        'vo_amphoreus': '翁瓦克',
-    }
 
     ans = []
-    isMale = config.getIsMale(game)
 
     for content in contents:
         textHash = content[0]
         obj = {'translates': {}, 'voicePaths': [], 'hash': str(textHash)}
 
         translates = batchTranslates.get(textHash, [])
-        for translate in translates:
-            text = translate[0]
-            lang = translate[1]
-            if text.startswith("#"):
-                obj['translates'][lang] = (placeholderReplace(text, isMale, lang, game))[1:]
-            elif game == "starrail" and ("{M#" in text or "{F#" in text or "{NICKNAME}" in text):
-                obj['translates'][lang] = placeholderReplace(text, isMale, lang, game)
-            else:
-                obj['translates'][lang] = text
+        obj['translates'] = placeholderProcessTranslates(translates, isMale, game)
 
         originInfo = batchOrigins.get(textHash)
         if originInfo is not None:
@@ -145,7 +141,7 @@ def getTranslateObj(keyword: str, langCode: int, game="genshin", word_mode=False
             if game == "starrail" and originInfo[0] == "对话文本":
                 vp = batchVoicePaths.get(textHash)
                 if vp:
-                    for prefix, areaName in _VOICE_PATH_CHAPTER_MAP.items():
+                    for prefix, areaName in _STARRAIL_VOICE_PATH_CHAPTER_MAP.items():
                         if vp.startswith(prefix):
                             obj['origin'] = areaName
                             break
@@ -158,14 +154,11 @@ def getTranslateObj(keyword: str, langCode: int, game="genshin", word_mode=False
                 obj['origin'] = "其他文本"
                 obj['isTalk'] = False
 
-        if game == "starrail":
-            talker = dialogueIds_for_talker.get(textHash)
-            if talker:
-                obj['talker'] = talker
+        if game == "starrail" and originInfo is not None and ', ' in originInfo[0]:
+            obj['talker'] = originInfo[0].split(', ')[0]
 
         voicePath = batchVoicePaths.get(textHash)
-        if voicePath is not None:
-            checker = get_checker(game)
+        if voicePath is not None and checker is not None:
             if checker.should_append_voice(voicePath, langs):
                 obj['voicePaths'].append(voicePath)
 
@@ -195,12 +188,15 @@ def getTalkFromHash(textHash, game="genshin"):
         questCompleteName = db.getCoopTalkQuestName(coopQuestId, sourceLangCode)
 
     rawDialogues = db.getTalkContent(talkId, coopQuestId, game)
+    if rawDialogues is None:
+        log.warning(f"rawDialogues is None for talkId={talkId} textHash={textHash} game={game}")
+        raise TalkNotFoundError("未找到该对话内容！")
     log.debug(f"rawDialogues count={len(rawDialogues)} questName={questCompleteName}")
     dialogues = []
 
     if game == "starrail":
         dialogueIds = [rd[3] for rd in rawDialogues]
-        talkerNamesFromVoice = db.batchGetTalkerNameFromVoice(dialogueIds)
+        talkerNamesFromVoice = db.batchGetTalkerNameFromVoice(dialogueIds, sourceLangCode)
     else:
         talkerNamesFromVoice = {}
 

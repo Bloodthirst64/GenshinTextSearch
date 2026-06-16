@@ -36,10 +36,11 @@ const gotoTalk = () => {
 
     <div class="entry">
 
-        <div class="translate" v-for="(translate, translateKey) in props.translateObj.translates">
+        <div class="translate" v-for="(translate, translateKey) in props.translateObj.translates" :key="translateKey">
             <p class="info">{{global.languages[translateKey]}}:
                 <span v-if="global.voiceLanguages[translateKey]">
                     <PlayVoiceButton v-for="voice in props.translateObj.voicePaths"
+                                     :key="`${props.translateObj.game}:${translateKey}:${voice}`"
                                      :voice-path="voice" :lang-code="translateKey"
                                      :game="props.translateObj.game"
                                      @on-voice-play="onVoicePlay"
