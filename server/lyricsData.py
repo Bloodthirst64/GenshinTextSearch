@@ -57,20 +57,27 @@ def search_lyrics(keyword: str, game: str = None, limit: int = 50):
         composer = song.get("composer", "")
         lyricist = song.get("lyricist", "")
 
-        title_match = keyword_lower in title.lower()
-        lyrics_match = keyword_lower in lyrics.lower()
-        album_match = keyword_lower in album.lower()
-        singer_match = keyword_lower in singer.lower()
-        composer_match = keyword_lower in composer.lower()
-        lyricist_match = keyword_lower in lyricist.lower()
+        title_lower = title.lower()
+        lyrics_lower = lyrics.lower()
+        album_lower = album.lower()
+        singer_lower = singer.lower()
+        composer_lower = composer.lower()
+        lyricist_lower = lyricist.lower()
+
+        title_match = keyword_lower in title_lower
+        lyrics_match = keyword_lower in lyrics_lower
+        album_match = keyword_lower in album_lower
+        singer_match = keyword_lower in singer_lower
+        composer_match = keyword_lower in composer_lower
+        lyricist_match = keyword_lower in lyricist_lower
 
         if title_match or lyrics_match or album_match or singer_match or composer_match or lyricist_match:
             matched_lines = []
             if lyrics_match:
-                for line in lyrics.split("\n"):
-                    line = line.strip()
-                    if line and keyword_lower in line.lower():
-                        matched_lines.append(line)
+                for orig_line, lower_line in zip(lyrics.split("\n"), lyrics_lower.split("\n")):
+                    lower_line = lower_line.strip()
+                    if lower_line and keyword_lower in lower_line:
+                        matched_lines.append(orig_line.strip())
                         if len(matched_lines) >= 5:
                             break
 

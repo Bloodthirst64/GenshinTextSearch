@@ -507,6 +507,35 @@ class GameDB:
                     result[dialogueId] = talkerName
             return result
 
+    def batchGetTalkerNameFromTextHash(self, textHashes: list, langCode: int = 1) -> dict:
+        if not textHashes:
+            return {}
+        with closing(self.conn.cursor()) as cursor:
+            placeholders = ','.join(['?'] * len(textHashes))
+            cursor.execute(
+                f'SELECT d.textHash, d.talkerNameHash, v.voicePath FROM dialogue d LEFT JOIN voice v ON v.dialogueId = d.dialogueId WHERE d.textHash IN ({placeholders})',
+                textHashes,
+            )
+            rows = cursor.fetchall()
+            talkerNameHashes = [str(row[1]) for row in rows if row[1] is not None]
+            batchTalkerNames = {}
+            if talkerNameHashes:
+                langStr = str(langCode)
+                hashPlaceholders = ','.join(['?'] * len(talkerNameHashes))
+                cursor.execute(
+                    f'SELECT hash, content FROM textMap WHERE hash IN ({hashPlaceholders}) AND lang = {langStr}',
+                    talkerNameHashes,
+                )
+                for talkerHash, content in cursor.fetchall():
+                    batchTalkerNames[str(talkerHash)] = content
+            result = {}
+            for row in rows:
+                textHash, talkerNameHash, voicePath = row
+                talkerName = self._resolveTalkerName(talkerNameHash, voicePath, langCode, batchTalkerNames)
+                if talkerName is not None:
+                    result[textHash] = talkerName
+            return result
+
     def getTalkQuestId(self, talkId: int) -> int | None:
         with closing(self.conn.cursor()) as cursor:
             sql2 = ('select quest.questId from questTalk, quest '

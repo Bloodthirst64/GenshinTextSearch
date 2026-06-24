@@ -1,6 +1,4 @@
-import copy
 import io
-from functools import lru_cache
 
 import databaseHelper
 from voice.checker import get_checker
@@ -80,25 +78,6 @@ def queryTextHashInfo(textHash, langs: 'list[int]', sourceLangCode: int, queryOr
 
 
 def getTranslateObj(keyword: str, langCode: int, game="genshin", word_mode=False):
-    cache_key = _translate_cache_key(keyword, langCode, game, word_mode)
-    return copy.deepcopy(_getTranslateObjCached(*cache_key))
-
-
-def _translate_cache_key(keyword: str, langCode: int, game="genshin", word_mode=False):
-    return (
-        keyword,
-        int(langCode),
-        game,
-        bool(word_mode),
-        tuple(config.getResultLanguages(game)),
-        config.getSourceLanguage(game),
-        config.getIsMale(game),
-        config.getNickname(game),
-    )
-
-
-@lru_cache(maxsize=128)
-def _getTranslateObjCached(keyword: str, langCode: int, game: str, word_mode: bool, resultLangs, sourceLangCode, isMale, nickname):
     db = databaseHelper.get_db(game)
     if word_mode and langCode == 4:
         expanded = expand_query_words(keyword)
@@ -106,7 +85,8 @@ def _getTranslateObjCached(keyword: str, langCode: int, game: str, word_mode: bo
     else:
         contents = db.selectTextMapFromKeyword(keyword, langCode)
 
-    langs = list(resultLangs)
+    langs = config.getResultLanguages(game)
+    sourceLangCode = config.getSourceLanguage(game)
 
     hashes = [c[0] for c in contents]
 
@@ -117,12 +97,13 @@ def _getTranslateObjCached(keyword: str, langCode: int, game: str, word_mode: bo
     )
     batchVoicePaths = db.batchSelectVoicePathFromTextHash(hashes)
 
-    checker = None
-    if batchVoicePaths:
+    if game == "starrail":
         checker = get_checker(game)
         checker.ensure_loaded()
+        talkerMap = db.batchGetTalkerNameFromTextHash(hashes, sourceLangCode)
 
     ans = []
+    isMale = config.getIsMale(game)
 
     for content in contents:
         textHash = content[0]
@@ -154,11 +135,14 @@ def _getTranslateObjCached(keyword: str, langCode: int, game: str, word_mode: bo
                 obj['origin'] = "其他文本"
                 obj['isTalk'] = False
 
-        if game == "starrail" and originInfo is not None and ', ' in originInfo[0]:
-            obj['talker'] = originInfo[0].split(', ')[0]
+        if game == "starrail":
+            talker = talkerMap.get(textHash)
+            if talker:
+                obj['talker'] = talker
 
         voicePath = batchVoicePaths.get(textHash)
-        if voicePath is not None and checker is not None:
+        if voicePath is not None:
+            checker = get_checker(game)
             if checker.should_append_voice(voicePath, langs):
                 obj['voicePaths'].append(voicePath)
 
@@ -196,7 +180,7 @@ def getTalkFromHash(textHash, game="genshin"):
 
     if game == "starrail":
         dialogueIds = [rd[3] for rd in rawDialogues]
-        talkerNamesFromVoice = db.batchGetTalkerNameFromVoice(dialogueIds, sourceLangCode)
+        talkerNamesFromVoice = db.batchGetTalkerNameFromVoice(dialogueIds)
     else:
         talkerNamesFromVoice = {}
 
